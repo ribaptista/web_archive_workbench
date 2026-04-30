@@ -1,74 +1,217 @@
-import path from "path";
-import pLimit from "p-limit";
-import { v4 as uuidv4 } from "uuid";
-import cliProgress from "cli-progress";
-import { parseArgs } from "./cli";
-import { openDatabase, insertRun } from "./db";
-import { fetchAndStoreCdx } from "./cdx";
-import { loadProxies } from "./proxy";
-import { downloadEntry, type DownloadTask } from "./downloader";
-import type { Database as DB } from "better-sqlite3";
+import path from 'path';
+import pLimit from 'p-limit';
+import { v4 as uuidv4 } from 'uuid';
+import cliProgress from 'cli-progress';
+import { parseArgs } from './cli';
+import { openDatabase, insertRun, insertRunArgs } from './db';
+import { fetchCdxRows, insertCdxEntries, getOrCreateCdxFile } from './cdx';
+import { findNewEntries, type ParsedCdxEntry } from './sync';
+import { loadProxies } from './proxy';
+import { downloadEntry, type DownloadTask } from './downloader';
 
-async function fetchDomainTasks(
+import type { Database as DB } from 'better-sqlite3';
+
+function resolveDomains(
   db: DB,
-  domain: string,
-  outputBase: string,
+  args: { all: boolean; domain: string[] },
+): string[] {
+  if (args.all) {
+    const rows = db
+      .prepare(`SELECT domain FROM cdx_file ORDER BY domain`)
+      .all() as { domain: string }[];
+    return rows.map((r) => r.domain);
+  }
+  return args.domain;
+}
+
+function printRetryDryRunSummary(
+  summary: Array<{ domain: string; entries: RetryEntry[] }>,
+  verbose: boolean,
+): void {
+  console.log('\n--- Dry-run Summary (retry mode) ---');
+  for (const s of summary) {
+    console.log(`  ${s.domain}: ${s.entries.length} entries to retry`);
+    if (verbose && s.entries.length > 0) {
+      for (const e of s.entries) {
+        console.log(`    [${e.timestamp}] ${e.url}`);
+      }
+    }
+  }
+}
+
+function printSyncDryRunSummary(
+  summary: Array<{ domain: string; newEntries: ParsedCdxEntry[] }>,
+  verbose: boolean,
+): void {
+  console.log('\n--- Dry-run Summary ---');
+  for (const s of summary) {
+    console.log(`  ${s.domain}: ${s.newEntries.length} new entries`);
+    if (verbose && s.newEntries.length > 0) {
+      for (const e of s.newEntries) {
+        console.log(
+          `    [${e.timestamp ?? '-'}] ${e.original} (${e.mimetype}, status=${e.statusCode ?? '-'}, digest=${e.digest}, length=${e.length ?? '-'})`,
+        );
+      }
+    }
+  }
+}
+
+type RetryEntry = {
+  url: string;
+  timestamp: number;
+  cdx_id: string;
+};
+
+async function runRetryMode(
+  db: DB,
+  domains: string[],
+  args: {
+    skipErrors: string[];
+    skipErrorMessages: string[];
+    dryRun: boolean;
+    verbose: boolean;
+    output: string;
+  },
   runId: string,
-): Promise<DownloadTask[]> {
-  const cdxId = uuidv4();
-  const outputFolder = path.join(outputBase, domain);
+  runDownloads: (tasks: DownloadTask[]) => Promise<void>,
+): Promise<void> {
+  const summary: Array<{ domain: string; entries: RetryEntry[] }> = [];
+  const allTasks: DownloadTask[] = [];
 
-  console.log(`\nDomain: ${domain}`);
-  console.log(`  run_id: ${runId}, cdx_id: ${cdxId}`);
-  console.log(`  Output folder: ${outputFolder}`);
+  const skipErrorFilters = [
+    ...args.skipErrors.map(() => `re.error_code = ?`),
+    ...args.skipErrorMessages.map(() => `re.error_message LIKE ?`),
+  ].join(' OR ');
+  const skipErrorParams = [...args.skipErrors, ...args.skipErrorMessages];
+  const skipErrorExistsClause = skipErrorFilters.length
+    ? `AND NOT EXISTS (
+        SELECT 1 FROM request_errors re
+        JOIN request r ON r.id = re.request_id
+        WHERE r.resource_version_url = rv.url
+          AND r.resource_version_timestamp = rv.timestamp
+          AND (${skipErrorFilters})
+      )`
+    : '';
 
-  await fetchAndStoreCdx(db, domain, runId, cdxId);
+  for (const domain of domains) {
+    console.log(`\nDomain: ${domain}`);
 
-  const entries = db
-    .prepare(`SELECT id, line, timestamp, original, mimetype FROM cdx_entry WHERE cdx_id = ?`)
-    .all(cdxId) as Array<{
-    id: number;
-    line: number;
-    timestamp: number | null;
-    original: string;
-    mimetype: string;
-  }>;
+    const pendingEntries = db
+      .prepare(
+        `
+        SELECT rv.url, rv.timestamp, rvs.cdx_id
+          FROM resource_version rv
+          JOIN resource_version_source rvs ON rvs.url = rv.url AND rvs.timestamp = rv.timestamp
+          JOIN cdx_file cf ON rvs.cdx_id = cf.id
+          WHERE cf.domain = ?
+            AND rv.successful_request_id IS NULL
+            ${skipErrorExistsClause}`,
+      )
+      .all(domain, ...skipErrorParams) as RetryEntry[];
 
-  console.log(`  ${entries.length} CDX entries queued.`);
+    console.log(`  ${pendingEntries.length} entries to retry.`);
+    summary.push({ domain, entries: pendingEntries });
 
-  return entries.map((entry): DownloadTask => ({
-    cdxEntryId: entry.id,
-    runId,
-    line: entry.line,
-    timestamp: entry.timestamp,
-    original: entry.original,
-    mimetype: entry.mimetype,
-    outputFolder,
-  }));
+    const outputFolder = args.output;
+    for (const entry of pendingEntries) {
+      allTasks.push({
+        runId,
+        timestamp: entry.timestamp,
+        original: entry.url,
+        cdxId: entry.cdx_id,
+        outputFolder,
+      });
+    }
+  }
+
+  if (args.dryRun) {
+    printRetryDryRunSummary(summary, args.verbose);
+  } else {
+    if (allTasks.length === 0) {
+      console.log('No incomplete entries found.');
+      return;
+    }
+    await runDownloads(allTasks);
+  }
+}
+
+async function runSyncMode(
+  db: DB,
+  domains: string[],
+  args: { dryRun: boolean; verbose: boolean; output: string },
+  runId: string,
+): Promise<void> {
+  const summary: Array<{
+    domain: string;
+    cdxId: string;
+    allEntries: ParsedCdxEntry[];
+    newEntries: ParsedCdxEntry[];
+  }> = [];
+
+  for (const domain of domains) {
+    console.log(`\nDomain: ${domain}`);
+
+    const cdxId = getOrCreateCdxFile(db, domain, runId);
+
+    let allEntries: ParsedCdxEntry[];
+    try {
+      allEntries = await fetchCdxRows(domain);
+    } catch (err) {
+      console.error(`  Error fetching CDX: ${err}`);
+      throw err;
+    }
+
+    if (allEntries.length === 0) {
+      console.log('  No CDX entries found.');
+      continue;
+    }
+
+    const newEntries = findNewEntries(db, domain, allEntries);
+    summary.push({ domain, cdxId, allEntries, newEntries });
+  }
+
+  printSyncDryRunSummary(
+    summary.map(({ domain, newEntries }) => ({ domain, newEntries })),
+    args.verbose,
+  );
+
+  if (args.dryRun) return;
+
+  for (const { cdxId, allEntries } of summary) {
+    insertCdxEntries(db, runId, cdxId, allEntries);
+  }
+  const totalNew = summary.reduce((sum, s) => sum + s.newEntries.length, 0);
+  console.log(
+    `\nSynced ${totalNew} new CDX entries across ${summary.length} domain(s).`,
+  );
 }
 
 async function main() {
   const args = parseArgs();
+  const db = openDatabase(args.db);
 
-  // Build output folder: append domain (if available) or run_id
-  let outputFolder = args.output;
+  const domains = resolveDomains(db, args);
+  if (domains.length === 0) {
+    console.log('No domains found in database.');
+    return;
+  }
 
   const runId = uuidv4();
-
-  const db = openDatabase(args.db);
   insertRun(db, runId);
+  insertRunArgs(db, runId, args);
 
-  const proxies = loadProxies(
-    args.proxyFile,
-    args.maxReqPerSecond,
-    args.maxReqPerMinute
-  );
+  const proxies = args.dryRun
+    ? []
+    : loadProxies(args.proxyFile, args.maxReqPerPeriod!, args.periodMs!);
 
   const limit = pLimit(args.concurrency);
 
   const runDownloads = async (tasks: DownloadTask[]): Promise<void> => {
     const bar = new cliProgress.SingleBar(
-      { format: "Progress |{bar}| {value}/{total} | succeeded: {succeeded} | failed: {failed}" },
+      {
+        format:
+          'Progress |{bar}| {value}/{total} | succeeded: {succeeded} | failed: {failed}',
+      },
       cliProgress.Presets.shades_classic,
     );
     bar.start(tasks.length, 0, { succeeded: 0, failed: 0 });
@@ -79,7 +222,8 @@ async function main() {
       tasks.map((task) =>
         limit(async () => {
           const ok = await downloadEntry(db, task, proxies);
-          if (ok) succeeded++; else failed++;
+          if (ok) succeeded++;
+          else failed++;
           bar.increment({ succeeded, failed });
         }),
       ),
@@ -89,144 +233,10 @@ async function main() {
     console.log(`Complete. succeeded: ${succeeded}, failed: ${failed}`);
   };
 
-  // ── MODE: retry-errors ─────────────────────────────────────────────────────
-  if (args.retryErrors.length > 0) {
-    const allTasks: DownloadTask[] = [];
-
-    for (const retryCdxId of args.retryErrors) {
-      console.log(`Retrying incomplete entries for cdx_id: ${retryCdxId}`);
-
-      const cdxFileRow = db
-        .prepare(`SELECT domain FROM cdx_file WHERE id = ? LIMIT 1`)
-        .get(retryCdxId) as { domain: string } | undefined;
-
-      if (!cdxFileRow) {
-        console.error(`No cdx_file record found for cdx_id: ${retryCdxId}`);
-        process.exit(1);
-      }
-
-      const folder = path.join(args.output, cdxFileRow.domain);
-
-      const pendingEntries = db
-        .prepare(
-          `SELECT e.id, e.line, e.timestamp, e.original, e.mimetype
-           FROM cdx_entry e
-           WHERE e.cdx_id = ?
-             AND NOT EXISTS (
-               SELECT 1 FROM request r
-               WHERE r.cdx_entry_id = e.id
-                 AND r.is_terminal = 1
-                 AND NOT EXISTS (SELECT 1 FROM request_errors re WHERE re.request_id = r.id)
-             )`
-        )
-        .all(retryCdxId) as Array<{
-        id: number;
-        line: number;
-        timestamp: number | null;
-        original: string;
-        mimetype: string;
-      }>;
-
-      if (pendingEntries.length === 0) {
-        console.log(`  No incomplete entries for ${retryCdxId}.`);
-        continue;
-      }
-
-      console.log(`  ${pendingEntries.length} entr(ies)`);
-
-      for (const entry of pendingEntries) {
-        allTasks.push({
-          cdxEntryId: entry.id,
-          runId,
-          line: entry.line,
-          timestamp: entry.timestamp,
-          original: entry.original,
-          mimetype: entry.mimetype,
-          outputFolder: folder,
-        });
-      }
-    }
-
-    if (allTasks.length === 0) {
-      console.log("No incomplete entries found.");
-      return;
-    }
-
-    await runDownloads(allTasks);
-    return;
+  if (!args.retryErrors) {
+    await runSyncMode(db, domains, args, runId);
   }
-
-  // ── MODE: cdx-id supplied (skip fetch) ────────────────────────────────────
-  let cdxId: string;
-
-  if (args.cdxId) {
-    cdxId = args.cdxId;
-
-    // Look up domain from existing cdx_file row
-    const cdxFileRow = db
-      .prepare(`SELECT domain FROM cdx_file WHERE id = ?`)
-      .get(cdxId) as { domain: string } | undefined;
-
-    if (!cdxFileRow) {
-      console.error(`No cdx_file record found for cdx_id: ${cdxId}`);
-      process.exit(1);
-    }
-
-    outputFolder = path.join(args.output, cdxFileRow.domain);
-    console.log(`Using existing CDX ID: ${cdxId}, run_id: ${runId}`);
-  } else {
-    // ── MODE: fresh download (one or more domains) ──────────────────────────
-    if (args.domains.length === 0) {
-      console.error("--domains is required when not using --cdx-id or --retry-errors");
-      process.exit(1);
-    }
-
-    const allTasks: DownloadTask[] = [];
-
-    for (const domain of args.domains) {
-      const tasks = await fetchDomainTasks(db, domain, args.output, runId);
-      allTasks.push(...tasks);
-    }
-
-    console.log(`\nDownloading ${allTasks.length} total CDX entries...`);
-    await runDownloads(allTasks);
-    return;
-  }
-
-  // ── Download entries ───────────────────────────────────────────────────────
-  const entries = db
-    .prepare(
-      `SELECT id, run_id, cdx_id, line, url_key, timestamp, original, mimetype, status_code, digest, length
-       FROM cdx_entry
-       WHERE cdx_id = ?`
-    )
-    .all(cdxId) as Array<{
-    id: number;
-    run_id: string;
-    cdx_id: string;
-    line: number;
-    url_key: string;
-    timestamp: number | null;
-    original: string;
-    mimetype: string;
-    status_code: number | null;
-    digest: string;
-    length: number | null;
-  }>;
-
-  console.log(`Downloading ${entries.length} CDX entries...`);
-
-  const tasks = entries.map((entry): DownloadTask => ({
-    cdxEntryId: entry.id,
-    runId,
-    line: entry.line,
-    timestamp: entry.timestamp,
-    original: entry.original,
-    mimetype: entry.mimetype,
-    outputFolder,
-  }));
-
-  await runDownloads(tasks);
+  await runRetryMode(db, domains, args, runId, runDownloads);
 }
 
 main().catch((err) => {

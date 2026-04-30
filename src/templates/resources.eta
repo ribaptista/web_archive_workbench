@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Resources</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+</head>
+<body class="bg-light">
+  <div class="container py-4" style="max-width: 960px">
+    <h1 class="mb-4">Resources</h1>
+
+    <% if (it.path) { %>
+      <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/resources">Root</a></li>
+          <li class="breadcrumb-item active" aria-current="page"><%= it.path %></li>
+        </ol>
+      </nav>
+    <% } %>
+
+    <ul class="list-group">
+      <% for (const node of it.nodes) { %>
+        <li class="list-group-item">
+          <% if (node.is_leaf) { %>
+            <a href="/list_versions?url=<%= encodeURIComponent(node.path) %>"><%= node.path %></a>
+            <span class="badge bg-success ms-2">resource</span>
+          <% } else { %>
+            <a href="/resources?path=<%= encodeURIComponent(node.path) %>&level=<%= node.level %>"><%= node.path %></a>
+          <% } %>
+        </li>
+      <% } %>
+      <% if (it.nodes.length === 0) { %>
+        <li class="list-group-item text-muted">No entries found.</li>
+      <% } %>
+    </ul>
+  </div>
+</body>
+</html>

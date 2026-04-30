@@ -1,6 +1,6 @@
-import fs from "fs";
-import Bottleneck from "bottleneck";
-import { ProxyAgent, Agent } from "undici";
+import fs from 'fs';
+import Bottleneck from 'bottleneck';
+import { ProxyAgent, Agent } from 'undici';
 
 export interface ProxyEntry {
   address: string;
@@ -16,13 +16,13 @@ const AGENT_CONNECTIONS = 300;
 
 export function loadProxies(
   proxyFile: string | undefined,
-  maxPerSecond: number,
-  maxPerMinute: number,
+  maxReqPerPeriod: number,
+  periodMs: number,
 ): ProxyEntry[] {
   const makeAgent = (proxy?: string): ProxyAgent | Agent => {
     if (proxy) {
       return new ProxyAgent({
-        uri: proxy.includes("://") ? proxy : `http://${proxy}`,
+        uri: proxy.includes('://') ? proxy : `http://${proxy}`,
         keepAliveTimeout: KEEP_ALIVE_TIMEOUT_MS,
         keepAliveMaxTimeout: KEEP_ALIVE_MAX_TIMEOUT_MS,
         connections: AGENT_CONNECTIONS,
@@ -43,11 +43,11 @@ export function loadProxies(
 
   const makeLimiter = (): Bottleneck => {
     return new Bottleneck({
-      reservoir: maxPerSecond,
-      reservoirRefreshAmount: maxPerSecond,
-      reservoirRefreshInterval: 1000,
-      maxConcurrent: maxPerSecond,
-      minTime: Math.ceil(1000 / maxPerSecond),
+      reservoir: maxReqPerPeriod,
+      reservoirRefreshAmount: maxReqPerPeriod,
+      reservoirRefreshInterval: periodMs,
+      maxConcurrent: maxReqPerPeriod,
+      minTime: Math.ceil(periodMs / maxReqPerPeriod),
     });
   };
 
@@ -55,7 +55,7 @@ export function loadProxies(
     // No proxy - single entry with direct connection
     return [
       {
-        address: "direct",
+        address: 'direct',
         agent: makeAgent(),
         limiter: makeLimiter(),
         ongoing: 0,
@@ -64,13 +64,13 @@ export function loadProxies(
   }
 
   const lines = fs
-    .readFileSync(proxyFile, "utf-8")
-    .split("\n")
+    .readFileSync(proxyFile, 'utf-8')
+    .split('\n')
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
 
   if (lines.length === 0) {
-    console.error("Proxy file is empty");
+    console.error('Proxy file is empty');
     process.exit(1);
   }
 

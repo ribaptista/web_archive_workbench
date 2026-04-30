@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Search Results #<%= it.search.id %></title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+</head>
+<body class="bg-light">
+  <div class="container py-4" style="max-width: 980px">
+    <a class="btn btn-sm btn-outline-secondary mb-3" href="/searches">&larr; All Searches</a>
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <h1 class="mb-0">Search Results</h1>
+      <% if (it.isPending) { %>
+        <div class="d-flex gap-2">
+          <a class="btn btn-sm btn-outline-secondary" href="/search_results?search_id=<%= it.searchId %>">&#8635; Refresh</a>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="auto-refresh-btn">Auto Refresh: Off</button>
+        </div>
+      <% } %>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-body py-2">
+        <p class="mb-1"><strong>Search ID:</strong> <%= it.search.id %></p>
+        <p class="mb-1"><strong>Created:</strong> <%= it.search.created_at %></p>
+        <p class="mb-1"><strong>Encoding:</strong> <%= it.search.char_encoding %></p>
+        <p class="mb-1"><strong>Status:</strong>
+          <% if (it.search.status === 'done') { %>
+            <span class="badge bg-success">done</span>
+          <% } else if (it.search.status === 'running') { %>
+            <span class="badge bg-primary">running</span>
+          <% } else if (it.search.status === 'error') { %>
+            <span class="badge bg-danger">error</span>
+          <% } else { %>
+            <span class="badge bg-secondary"><%= it.search.status %></span>
+          <% } %>
+        </p>
+        <% if (it.search.status === 'pending' || it.search.status === 'running') { %>
+          <% const pct = it.search.file_count > 0 ? Math.round(it.search.scanned_file_count / it.search.file_count * 100) : 0; %>
+          <div class="mt-2">
+            <div class="d-flex justify-content-between small mb-1">
+              <span>Scanning files&hellip;</span>
+              <span><%= it.search.scanned_file_count %> / <%= it.search.file_count %> &nbsp;(<%= pct %>%)</span>
+            </div>
+            <div class="progress" style="height: 8px">
+              <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: <%= pct %>%"></div>
+            </div>
+          </div>
+        <% } else if (it.search.status === 'error') { %>
+          <div class="alert alert-danger mt-2 mb-0 py-1 small"><strong>Error:</strong> <%= it.search.error_message %></div>
+        <% } %></p>
+        <% if (it.domains && it.domains.length > 0) { %>
+          <p class="mb-0"><strong>Domains:</strong> <%= it.domains.map(d => d.domain).join(', ') %></p>
+        <% } else { %>
+          <p class="mb-0"><strong>Domains:</strong> <em>all</em></p>
+        <% } %>
+      </div>
+    </div>
+
+    <h2 class="h5 mb-2">Conditions</h2>
+    <ol class="mb-3">
+      <% for (const c of it.conditions) { %>
+        <li>
+          Regex: <code><%= c.regex %></code>
+          <% if (c.not_regex_nearby) { %>
+            &mdash; Not nearby: <code><%= c.not_regex_nearby %></code>
+          <% } %>
+        </li>
+      <% } %>
+    </ol>
+
+    <div class="card mb-3">
+      <div class="card-header py-2"><strong>Filter Results</strong></div>
+      <div class="card-body py-2">
+        <% if (it.domains && it.domains.length > 0) { %>
+          <div class="mb-3">
+            <p class="fw-semibold small mb-1">Domains</p>
+            <div class="d-flex flex-wrap gap-2">
+              <% for (const d of it.domains) { %>
+                <% const domainChecked = it.filterDomains.length === 0 || it.filterDomains.includes(d.id); %>
+                <div class="form-check form-check-inline me-3">
+                  <input class="form-check-input filter-domain" type="checkbox" id="fd-<%= d.id %>" value="<%= d.id %>"<% if (domainChecked) { %> checked<% } %> />
+                  <label class="form-check-label" for="fd-<%= d.id %>"><%= d.domain %></label>
+                </div>
+              <% } %>
+            </div>
+          </div>
+        <% } %>
+        <% if (it.conditions.length > 1) { %>
+          <div class="mb-3">
+            <p class="fw-semibold small mb-1">Conditions</p>
+            <div class="d-flex flex-wrap gap-2">
+              <% for (const c of it.conditions) { %>
+                <% const condChecked = it.filterConditionIds.length === 0 || it.filterConditionIds.includes(c.id); %>
+                <div class="form-check form-check-inline me-3">
+                  <input class="form-check-input filter-condition" type="checkbox" id="fc-<%= c.id %>" value="<%= c.id %>"<% if (condChecked) { %> checked<% } %> />
+                  <label class="form-check-label"><code><%= c.regex %></code></label>
+                </div>
+              <% } %>
+            </div>
+          </div>
+        <% } %>
+        <% if (it.reactionTypes && it.reactionTypes.length > 0) { %>
+          <div class="mb-3">
+            <p class="fw-semibold small mb-1">Only reacted</p>
+            <div class="d-flex flex-wrap gap-2">
+              <% for (const rt of it.reactionTypes) { %>
+                <% const reactionChecked = it.filterReactionTypeIds.includes(rt.id); %>
+                <div class="form-check form-check-inline me-3">
+                  <input class="form-check-input filter-reaction" type="checkbox" id="fr-<%= rt.id %>" value="<%= rt.id %>"<% if (reactionChecked) { %> checked<% } %> />
+                  <label class="form-check-label" for="fr-<%= rt.id %>"><%= rt.emoji %> <%= rt.label %></label>
+                </div>
+              <% } %>
+            </div>
+          </div>
+        <% } %>
+        <button type="button" class="btn btn-sm btn-primary" id="apply-filters">Update Filters</button>
+      </div>
+    </div>
+
+    <h2 class="h5 mb-2">Files with Matches (<%= it.totalFiles %>)</h2>
+
+    <% const similarSuffix = it.similarTo ? `&similar_to=${it.similarTo}` : ''; %>
+    <% const filterParts = []; for (const id of it.filterDomains) filterParts.push(`domain[]=${encodeURIComponent(id)}`); for (const id of it.filterConditionIds) filterParts.push(`condition_id[]=${id}`); for (const id of it.filterReactionTypeIds) filterParts.push(`reaction_type_id[]=${id}`); const filterSuffix = filterParts.length ? '&' + filterParts.join('&') : ''; %>
+
+    <% if (it.similarTo) { %>
+      <div class="alert alert-info py-2">
+        Showing all results with context digest: <code><%= it.similarTo %></code>
+        &mdash; <a href="/search_results?search_id=<%= it.searchId %><%= filterSuffix %>">Back to deduplicated results</a>
+      </div>
+    <% } %>
+
+    <% if (it.totalPages > 1) { %>
+      <nav class="mb-3">
+        <ul class="pagination pagination-sm flex-wrap">
+          <li class="page-item<%= it.currentPage === 1 ? ' disabled' : '' %>">
+            <a class="page-link" href="/search_results?search_id=<%= it.searchId %>&page=<%= it.currentPage - 1 %><%= similarSuffix %><%= filterSuffix %>">&laquo;</a>
+          </li>
+          <% for (let p = 1; p <= it.totalPages; p++) { %>
+            <li class="page-item<%= p === it.currentPage ? ' active' : '' %>">
+              <a class="page-link" href="/search_results?search_id=<%= it.searchId %>&page=<%= p %><%= similarSuffix %><%= filterSuffix %>"><%= p %></a>
+            </li>
+          <% } %>
+          <li class="page-item<%= it.currentPage === it.totalPages ? ' disabled' : '' %>">
+            <a class="page-link" href="/search_results?search_id=<%= it.searchId %>&page=<%= it.currentPage + 1 %><%= similarSuffix %><%= filterSuffix %>">&raquo;</a>
+          </li>
+        </ul>
+      </nav>
+    <% } %>
+
+    <% if (it.files.length === 0) { %>
+      <p class="text-muted">No matches found.</p>
+    <% } else { %>
+      <div class="d-flex flex-column gap-3">
+        <% for (const file of it.files) { %>
+          <div class="card">
+            <div class="card-body py-2">
+              <div class="d-flex gap-3 align-items-start">
+                <div class="flex-grow-1 min-width-0">
+                  <div class="mb-2">
+                    <a class="fw-bold text-break" target="_blank" rel="noopener noreferrer" href="http://localhost:3000/replay/<%= file.timestamp %>/<%= file.original %>"><%= file.original %></a>
+                    <% if (!it.similarTo && file.duplicate_count > 1) { %>
+                      <a class="small ms-2" href="/search_results?search_id=<%= it.searchId %>&similar_to=<%= file.context_digest %><%= filterSuffix %>">+<%= file.duplicate_count - 1 %> similar</a>
+                    <% } %>
+                    <% const _ts = `${file.timestamp}` || ''; const _fmtTs = _ts.length === 14 ? `${_ts.slice(0,4)}-${_ts.slice(4,6)}-${_ts.slice(6,8)}` : _ts; %>
+                    <div class="text-muted small mt-1"><%= _fmtTs %> &mdash; <%= file.match_count %> match<%= file.match_count !== 1 ? 'es' : '' %></div>
+                  </div>
+                  <% if (file.fileError) { %>
+                    <div class="text-danger small mt-1"><strong>Data error:</strong> <%= file.fileError %></div>
+                  <% } %>
+                  <% if (file.contextWindows.length > 0) { %>
+                    <ul class="list-unstyled mb-0">
+                      <% for (const win of file.contextWindows) { %>
+                        <li class="small text-break mb-1" style="white-space:pre-wrap"><%~ it.highlightMatches(win.context, win.matches) %></li>
+                      <% } %>
+                    </ul>
+                  <% } %>
+                </div>
+                <% if (it.reactionTypes && it.reactionTypes.length > 0) { %>
+                  <div class="d-flex flex-column gap-1 flex-shrink-0">
+                    <% for (const rt of it.reactionTypes) { %>
+                      <% const isActive = it.activeReactions.includes(`${file.body_digest}:${rt.id}`); %>
+                      <button
+                        class="btn btn-sm <%= isActive ? 'btn-secondary' : 'btn-outline-secondary' %> reaction-btn"
+                        style="width:2rem;height:2rem;padding:0;line-height:1"
+                        data-body-digest="<%= file.body_digest %>"
+                        data-reaction-type-id="<%= rt.id %>"
+                        disabled
+                        title="<%= rt.label %>">
+                        <%= rt.emoji %>
+                      </button>
+                    <% } %>
+                  </div>
+                <% } %>
+              </div>
+            </div>
+          </div>
+        <% } %>
+      </div>
+    <% } %>
+
+    <% if (it.totalPages > 1) { %>
+      <nav class="mt-3">
+        <ul class="pagination pagination-sm flex-wrap">
+          <li class="page-item<%= it.currentPage === 1 ? ' disabled' : '' %>">
+            <a class="page-link" href="/search_results?search_id=<%= it.searchId %>&page=<%= it.currentPage - 1 %><%= similarSuffix %><%= filterSuffix %>">&laquo;</a>
+          </li>
+          <% for (let p = 1; p <= it.totalPages; p++) { %>
+            <li class="page-item<%= p === it.currentPage ? ' active' : '' %>">
+              <a class="page-link" href="/search_results?search_id=<%= it.searchId %>&page=<%= p %><%= similarSuffix %><%= filterSuffix %>"><%= p %></a>
+            </li>
+          <% } %>
+          <li class="page-item<%= it.currentPage === it.totalPages ? ' disabled' : '' %>">
+            <a class="page-link" href="/search_results?search_id=<%= it.searchId %>&page=<%= it.currentPage + 1 %><%= similarSuffix %><%= filterSuffix %>">&raquo;</a>
+          </li>
+        </ul>
+      </nav>
+    <% } %>
+  </div>
+  <script>
+    (function () {
+      // Enable reaction buttons (start disabled so they only work when JS is ready)
+      document.querySelectorAll('.reaction-btn').forEach(function (btn) {
+        btn.disabled = false;
+      });
+
+      document.addEventListener('click', function (e) {
+        const btn = e.target.closest('.reaction-btn');
+        if (!btn) return;
+        const bodyDigest = btn.dataset.bodyDigest;
+        const reactionTypeId = Number(btn.dataset.reactionTypeId);
+        const isCurrentlyActive = btn.classList.contains('btn-secondary');
+        btn.disabled = true;
+        fetch('/reactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body_digest: bodyDigest, reaction_type_id: reactionTypeId, active: !isCurrentlyActive }),
+        })
+          .then(function (res) {
+            if (!res.ok) throw new Error('Server error: ' + res.status);
+            return res.json();
+          })
+          .then(function (data) {
+            // Update all reaction buttons for this body_digest based on full server state
+            document.querySelectorAll(
+              `.reaction-btn[data-body-digest="${CSS.escape(bodyDigest)}"]`
+            ).forEach(function (b) {
+              b.disabled = false;
+              const rtId = Number(b.dataset.reactionTypeId);
+              if (data.activeReactionTypeIds.includes(rtId)) {
+                b.classList.remove('btn-outline-secondary');
+                b.classList.add('btn-secondary');
+              } else {
+                b.classList.remove('btn-secondary');
+                b.classList.add('btn-outline-secondary');
+              }
+            });
+          })
+          .catch(function (err) {
+            btn.disabled = false;
+            let msg = document.getElementById('reaction-error');
+            if (!msg) {
+              msg = document.createElement('div');
+              msg.id = 'reaction-error';
+              msg.className = 'alert alert-danger alert-dismissible position-fixed bottom-0 end-0 m-3';
+              msg.style.zIndex = '9999';
+              msg.innerHTML = '<button type="button" class="btn-close" onclick="this.parentElement.remove()"></button><span id="reaction-error-text"></span>';
+              document.body.appendChild(msg);
+            }
+            document.getElementById('reaction-error-text').textContent = 'Failed to save reaction: ' + err.message;
+          });
+      });
+    })();
+
+    (function () {
+      const btn = document.getElementById('auto-refresh-btn');
+      if (!btn) return;
+      const url = new URL(window.location.href);
+      const isOn = url.searchParams.get('auto_refresh') === '1';
+      if (isOn) {
+        btn.textContent = 'Auto Refresh: On';
+        btn.classList.add('active');
+        setTimeout(function () { window.location.reload(); }, 3000);
+      }
+      btn.addEventListener('click', function () {
+        const u = new URL(window.location.href);
+        if (u.searchParams.get('auto_refresh') === '1') {
+          u.searchParams.delete('auto_refresh');
+        } else {
+          u.searchParams.set('auto_refresh', '1');
+        }
+        window.location.href = u.toString();
+      });
+    })();
+
+    document.getElementById('apply-filters')?.addEventListener('click', function () {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('domain[]');
+      url.searchParams.delete('condition_id[]');
+      url.searchParams.delete('reaction_type_id[]');
+      url.searchParams.set('page', '1');
+
+      const domainBoxes = [...document.querySelectorAll('.filter-domain')];
+      const allDomainsChecked = domainBoxes.length === 0 || domainBoxes.every(cb => cb.checked);
+      if (!allDomainsChecked) {
+        domainBoxes.filter(cb => cb.checked).forEach(cb => url.searchParams.append('domain[]', cb.value));
+      }
+
+      const conditionBoxes = [...document.querySelectorAll('.filter-condition')];
+      const allConditionsChecked = conditionBoxes.length === 0 || conditionBoxes.every(cb => cb.checked);
+      if (!allConditionsChecked) {
+        conditionBoxes.filter(cb => cb.checked).forEach(cb => url.searchParams.append('condition_id[]', cb.value));
+      }
+
+      const reactionBoxes = [...document.querySelectorAll('.filter-reaction')];
+      reactionBoxes.filter(cb => cb.checked).forEach(cb => url.searchParams.append('reaction_type_id[]', cb.value));
+
+      window.location.href = url.toString();
+    });
+  </script>
+</body>
+</html>

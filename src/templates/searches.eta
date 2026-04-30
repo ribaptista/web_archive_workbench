@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>All Searches</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+</head>
+<body class="bg-light">
+  <div class="container py-4" style="max-width: 980px">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+      <h1 class="mb-0">All Searches</h1>
+      <div class="d-flex gap-2">
+        <% if (it.hasRunning) { %>
+          <a class="btn btn-sm btn-outline-secondary" href="/searches">&#8635; Refresh</a>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="auto-refresh-btn">Auto Refresh: Off</button>
+        <% } %>
+        <a class="btn btn-sm btn-primary" href="/">+ New Search</a>
+      </div>
+    </div>
+
+    <% if (it.searches.length === 0) { %>
+      <p class="text-muted">No searches yet.</p>
+    <% } else { %>
+      <div class="d-flex flex-column gap-3">
+        <% for (const s of it.searches) { %>
+          <div class="card">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <div>
+                  <span class="fw-bold">Search #<%= s.id %></span>
+                  <span class="text-muted small ms-2"><%= s.created_at %></span>
+                  <span class="badge bg-secondary ms-2"><%= s.char_encoding %></span>
+                  <% if (s.status === 'done') { %>
+                    <span class="badge bg-success ms-1">done</span>
+                  <% } else if (s.status === 'running') { %>
+                    <span class="badge bg-primary ms-1">running</span>
+                  <% } else if (s.status === 'error') { %>
+                    <span class="badge bg-danger ms-1">error</span>
+                  <% } else { %>
+                    <span class="badge bg-secondary ms-1"><%= s.status %></span>
+                  <% } %>
+                </div>
+                <div class="d-flex gap-2">
+                  <a class="btn btn-sm btn-outline-primary" href="/search_results?search_id=<%= s.id %>">View results</a>
+                  <form method="POST" action="/searches/<%= s.id %>/delete" onsubmit="return confirm('Delete search #<%= s.id %> and all its results?')">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                  </form>
+                </div>
+              </div>
+
+              <div class="mb-1">
+                <span class="small text-muted">Domains:</span>
+                <% if (s.domains.length > 0) { %>
+                  <% for (const d of s.domains) { %>
+                    <span class="badge bg-light text-dark border ms-1"><%= d %></span>
+                  <% } %>
+                <% } else { %>
+                  <span class="small ms-1"><em>all</em></span>
+                <% } %>
+              </div>
+
+              <div class="mb-1">
+                <span class="small text-muted">Conditions:</span>
+                <ol class="mb-0 mt-1 ps-3">
+                  <% for (const c of s.conditions) { %>
+                    <li class="small">
+                      <code><%= c.regex %></code>
+                      <% if (c.not_regex_nearby) { %>
+                        &mdash; not nearby: <code><%= c.not_regex_nearby %></code>
+                      <% } %>
+                    </li>
+                  <% } %>
+                </ol>
+              </div>
+
+              <div class="mt-2">
+                <% if (s.status === 'pending' || s.status === 'running') { %>
+                  <% const pct = s.file_count > 0 ? Math.round(s.scanned_file_count / s.file_count * 100) : 0; %>
+                  <div class="d-flex justify-content-between small mb-1">
+                    <span>Scanning&hellip;</span>
+                    <span><%= s.scanned_file_count %> / <%= s.file_count %> &nbsp;(<%= pct %>%)</span>
+                  </div>
+                  <div class="progress" style="height: 6px">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: <%= pct %>%"></div>
+                  </div>
+                <% } else if (s.status === 'error') { %>
+                  <div class="alert alert-danger py-1 mb-0 small"><strong>Error:</strong> <%= s.error_message %></div>
+                <% } else { %>
+                  <span class="badge bg-success"><%= s.match_file_count %> file<%= s.match_file_count !== 1 ? 's' : '' %> with matches</span>
+                <% } %>
+              </div>
+            </div>
+          </div>
+        <% } %>
+      </div>
+    <% } %>
+  </div>
+  <script>
+    (function () {
+      const btn = document.getElementById('auto-refresh-btn');
+      if (!btn) return;
+      const url = new URL(window.location.href);
+      const isOn = url.searchParams.get('auto_refresh') === '1';
+      if (isOn) {
+        btn.textContent = 'Auto Refresh: On';
+        btn.classList.add('active');
+        setTimeout(function () { window.location.reload(); }, 3000);
+      }
+      btn.addEventListener('click', function () {
+        const u = new URL(window.location.href);
+        if (u.searchParams.get('auto_refresh') === '1') {
+          u.searchParams.delete('auto_refresh');
+        } else {
+          u.searchParams.set('auto_refresh', '1');
+        }
+        window.location.href = u.toString();
+      });
+    })();
+  </script>
+</body>
+</html>
