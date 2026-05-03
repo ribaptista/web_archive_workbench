@@ -94,15 +94,7 @@ export function normalizeCdxRow(
   const statusCode = parseIntField(statusCodeRaw);
   const digest = parseStringField(digestRaw);
   const length = parseIntField(lengthRaw);
-  let isValid = [
-    urlKey,
-    timestamp,
-    original,
-    mimetype,
-    statusCode,
-    digest,
-    length,
-  ].every((v) => v !== null);
+  let isValid = [timestamp, original].every((v) => v !== null);
 
   const parsedUrl = original !== null ? parseUrl(original) : null;
   if (!parsedUrl) isValid = false;
