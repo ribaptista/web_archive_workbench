@@ -1,6 +1,7 @@
 import type { Database as DB } from 'better-sqlite3';
-import type { Eta } from 'eta';
 import { getPathParts } from './tree-node-utils';
+
+const PAGE_SIZE = 100;
 
 type VersionRow = {
   timestamp: number;
@@ -12,9 +13,13 @@ type VersionRow = {
   location_timestamp: number | null;
 };
 
-export function getListVersionsData(db: DB, url: string) {
+export function getListVersionsData(
+  db: DB,
+  url: string,
+  cursor: number | null,
+) {
   const versions = db
-    .prepare<[string, string], VersionRow>(
+    .prepare<[string, string, number, number], VersionRow>(
       `SELECT rv.timestamp,
               rv.successful_request_id,
               CASE
@@ -45,9 +50,16 @@ export function getListVersionsData(db: DB, url: string) {
            AND le.resource_version_timestamp = rv.timestamp
            AND le.rn = 1
        WHERE rv.url = ?
-       ORDER BY rv.timestamp`,
+         AND rv.timestamp > ?
+       ORDER BY rv.timestamp
+       LIMIT ?`,
     )
-    .all(url, url);
+    .all(url, url, cursor ?? 0, PAGE_SIZE);
+
+  const nextCursor =
+    versions.length === PAGE_SIZE
+      ? versions[versions.length - 1].timestamp
+      : null;
 
   const parts = getPathParts(url);
   const breadcrumbs = parts.map((_, i) => ({
@@ -56,12 +68,5 @@ export function getListVersionsData(db: DB, url: string) {
     level: i,
   }));
 
-  return { url, versions, breadcrumbs };
-}
-
-export function renderListVersions(db: DB, eta: Eta, url: string): string {
-  return (
-    eta.render('./list_versions', getListVersionsData(db, url)) ??
-    '<h1>Template error</h1>'
-  );
+  return { url, versions, nextCursor, breadcrumbs };
 }

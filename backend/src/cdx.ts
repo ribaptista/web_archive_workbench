@@ -149,6 +149,9 @@ export function insertCdxEntries(
   const insertResourceVersionSource = db.prepare(
     `INSERT OR IGNORE INTO resource_version_source (url, timestamp, cdx_id) VALUES (?, ?, ?)`,
   );
+  const incrementCdxTotal = db.prepare(
+    `UPDATE cdx_file SET total_count = total_count + 1, pending_count = pending_count + 1 WHERE id = ?`,
+  );
 
   const insertOne = db.transaction((entry: ParsedCdxEntry) => {
     const result = insertEntry.run(
@@ -176,7 +179,8 @@ export function insertCdxEntries(
       insertTreeNodePaths(db, [original]);
       insertResource.run(original);
       insertResourceVersion.run(original, timestamp);
-      insertResourceVersionSource.run(original, timestamp, cdxId);
+      const rvsr = insertResourceVersionSource.run(original, timestamp, cdxId);
+      if (rvsr.changes > 0) incrementCdxTotal.run(cdxId);
     }
     return true;
   });
@@ -208,42 +212,81 @@ export function getOrCreateCdxFile(
 }
 
 /**
- * Fetches raw CDX rows from the Wayback Machine for a domain.
- * Returns all rows including the header row at index 0.
- * Throws on network/parse errors; returns an empty array if no snapshots exist.
+ * Fetches CDX rows from the Wayback Machine for a domain and yields parsed entries page by page.
+ * Throws on network/parse errors.
  */
-export async function fetchCdxRows(domain: string): Promise<ParsedCdxEntry[]> {
-  const url = `http://web.archive.org/cdx/search/cdx?matchType=domain&output=json&url=${encodeURIComponent(domain)}`;
+export async function* fetchCdxRows(
+  domain: string,
+  cdxPageSize: number,
+): AsyncGenerator<ParsedCdxEntry[], void, void> {
+  const baseUrl = `http://web.archive.org/cdx/search/cdx?matchType=domain&output=json&showResumeKey=true&limit=${cdxPageSize}&url=${encodeURIComponent(domain)}`;
 
-  console.log(`Fetching CDX from: ${url}`);
+  let resumeKey: string | undefined = undefined;
+  let page = 1;
 
-  let rows: string[][];
-  for (let attempt = 1; ; attempt++) {
-    const controller = new AbortController();
-    const timeout = setTimeout(
-      () => controller.abort(new Error('CDX fetch timed out after 60s')),
-      60_000,
-    );
-    try {
-      const response = await fetch(url, { signal: controller.signal });
+  while (true) {
+    const url =
+      resumeKey === undefined
+        ? baseUrl
+        : `${baseUrl}&resumeKey=${encodeURIComponent(resumeKey)}`;
 
-      if (!response.ok) {
-        throw new Error(`CDX fetch failed with status ${response.status}`);
+    console.log(`Fetching CDX page ${page} from: ${url}`);
+
+    let rows: unknown[];
+    for (let attempt = 1; ; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort(new Error('CDX fetch timed out after 60s')),
+        60_000,
+      );
+      try {
+        const response = await fetch(url, { signal: controller.signal });
+
+        if (!response.ok) {
+          throw new Error(`CDX fetch failed with status ${response.status}`);
+        }
+
+        rows = (await response.json()) as unknown[];
+        break;
+      } catch (err) {
+        console.error(`CDX fetch attempt ${attempt} failed: ${err}`);
+        console.log(`Retrying in 10 seconds...`);
+        await new Promise((resolve) => setTimeout(resolve, 10_000));
+      } finally {
+        clearTimeout(timeout);
       }
-
-      rows = (await response.json()) as string[][];
-      break;
-    } catch (err) {
-      console.error(`CDX fetch attempt ${attempt} failed: ${err}`);
-      console.log(`Retrying in 10 seconds...`);
-      await new Promise((resolve) => setTimeout(resolve, 10_000));
-    } finally {
-      clearTimeout(timeout);
     }
-  }
 
-  if (!Array.isArray(rows)) {
-    throw new Error('CDX response is not a JSON array');
+    if (!Array.isArray(rows)) {
+      throw new Error('CDX response is not a JSON array');
+    }
+
+    let nextResumeKey: string | null = null;
+    let pageRows: unknown[] = rows;
+
+    if (rows.length >= 2) {
+      const secondToLast = rows[rows.length - 2];
+      const last = rows[rows.length - 1];
+
+      if (
+        Array.isArray(secondToLast) &&
+        secondToLast.length === 0 &&
+        Array.isArray(last) &&
+        last.length === 1 &&
+        typeof last[0] === 'string'
+      ) {
+        nextResumeKey = last[0];
+        pageRows = rows.slice(0, -2);
+      }
+    }
+
+    yield parseCdxRows(pageRows);
+
+    if (!nextResumeKey || nextResumeKey === resumeKey) {
+      break;
+    }
+
+    resumeKey = nextResumeKey;
+    page += 1;
   }
-  return parseCdxRows(rows!);
 }

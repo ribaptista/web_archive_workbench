@@ -52,36 +52,29 @@ function matchCondition(
   return results;
 }
 
-export interface FileMatches {
+export type FileMatches = {
   matches: FileMatch[];
-  contextDigest: string | null;
-}
+  contextDigest: string;
+};
 
 export function getFileMatches(
   filePath: string,
   conditions: SearchCondition[],
-  charEncoding: BufferEncoding,
 ): FileMatches {
-  if (!fs.existsSync(filePath)) {
-    console.warn(`[file_search] File not found: ${filePath}`);
-    return { matches: [], contextDigest: null };
-  }
-  const content = fs.readFileSync(filePath, charEncoding);
+  const content = fs.readFileSync(filePath, 'utf8');
   const matches = conditions.flatMap((condition) =>
     matchCondition(content, condition),
   );
-  let contextDigest: string | null = null;
-  if (matches.length > 0) {
-    const hash = createHash('sha256');
-    for (const m of matches) {
-      const ctxStart = Math.max(0, m.matchOffset - DIGEST_CONTEXT_LENGTH);
-      const ctxEnd = Math.min(
-        content.length,
-        m.matchOffset + m.matchLength + DIGEST_CONTEXT_LENGTH,
-      );
-      hash.update(content.slice(ctxStart, ctxEnd));
-    }
-    contextDigest = hash.digest('base64url');
+
+  const hash = createHash('sha256');
+  for (const m of matches) {
+    const ctxStart = Math.max(0, m.matchOffset - DIGEST_CONTEXT_LENGTH);
+    const ctxEnd = Math.min(
+      content.length,
+      m.matchOffset + m.matchLength + DIGEST_CONTEXT_LENGTH,
+    );
+    hash.update(content.slice(ctxStart, ctxEnd));
   }
+  const contextDigest = hash.digest('base64url');
   return { matches, contextDigest };
 }

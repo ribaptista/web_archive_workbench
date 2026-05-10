@@ -8,9 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { FileResultCard, DynamicIcon } from "@/components/FileResultCard";
 import type { ReactionType, MatchedCondition } from "@/components/FileResultCard";
+import { Spinner } from "@/components/ui/spinner";
+import { ErrorMessage } from "@/components/ui/error-message";
 
 interface ReactionsViewFile {
-  body_digest: string;
+  resource_version_url: string;
+  resource_version_timestamp: number;
   request_id: string;
   original: string;
   timestamp: string;
@@ -18,6 +21,7 @@ interface ReactionsViewFile {
 
 interface ReactionsViewData {
   files: ReactionsViewFile[];
+  urlTimestampKeys: string[];
   totalFiles: number;
   totalPages: number;
   currentPage: number;
@@ -74,20 +78,20 @@ function ReactionsViewInner() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function toggleReaction(bodyDigest: string, rtId: number) {
-    const key = `${bodyDigest}:${rtId}`;
+  async function toggleReaction(url: string, timestamp: number, rtId: number) {
+    const key = `${url}|${timestamp}:${rtId}`;
     const isActive = activeReactions.has(key);
     const res = await fetch("/reactions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body_digest: bodyDigest, reaction_type_id: rtId, active: !isActive }),
+      body: JSON.stringify({ resource_version_url: url, resource_version_timestamp: timestamp, reaction_type_id: rtId, active: !isActive }),
     });
     if (!res.ok) return;
     const result = await res.json();
     setActiveReactions((prev) => {
       const next = new Set(prev);
-      for (const rt of data?.reactionTypes ?? []) next.delete(`${bodyDigest}:${rt.id}`);
-      for (const id of result.activeReactionTypeIds) next.add(`${bodyDigest}:${id}`);
+      for (const rt of data?.reactionTypes ?? []) next.delete(`${url}|${timestamp}:${rt.id}`);
+      for (const id of result.activeReactionTypeIds) next.add(`${url}|${timestamp}:${id}`);
       return next;
     });
   }
@@ -106,14 +110,15 @@ function ReactionsViewInner() {
     return `/reactions_view?${u}`;
   }
 
-  if (error) return <p className="p-8 text-destructive">{error}</p>;
+  if (error) return <ErrorMessage message={error} />;
+  if (data === null) return <Spinner />;
 
   const reactionTypes = data?.reactionTypes ?? [];
   const domains = data?.domains ?? [];
   const { files = [], totalFiles = 0, totalPages = 1, currentPage = 1 } = data ?? {};
 
   return (
-    <div className="container max-w-4xl py-8 mx-auto px-4">
+    <div className="container max-w-5xl py-8 mx-auto px-4">
       <h1 className="text-2xl font-bold mb-4">Reactions</h1>
 
       {/* Reaction type selector */}
@@ -198,18 +203,23 @@ function ReactionsViewInner() {
         <p className="text-muted-foreground">No reactions found.</p>
       ) : (
         <div className="space-y-3">
-          {files.map((file) => (
-            <FileResultCard
-              key={file.body_digest}
-              bodyDigest={file.body_digest}
-              original={file.original}
-              timestamp={file.timestamp}
-              reactionTypes={reactionTypes}
-              activeReactions={activeReactions}
-              onToggleReaction={toggleReaction}
-              matchedConditions={data?.matchedConditions[file.body_digest]}
-            />
-          ))}
+          {files.map((file) => {
+            const key = `${file.resource_version_url}|${file.resource_version_timestamp}`;
+            return (
+              <FileResultCard
+                key={key}
+                bodyDigest=""
+                resourceVersionUrl={file.resource_version_url}
+                resourceVersionTimestamp={file.resource_version_timestamp}
+                original={file.original}
+                timestamp={file.timestamp}
+                reactionTypes={reactionTypes}
+                activeReactions={activeReactions}
+                onToggleReaction={toggleReaction}
+                matchedConditions={data?.matchedConditions[key]}
+              />
+            );
+          })}
         </div>
       )}
 

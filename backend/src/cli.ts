@@ -7,6 +7,7 @@ export interface CliArgs {
   all: boolean;
   output: string;
   db: string;
+  cdxPageSize: number;
   proxyFile: string | undefined;
   maxReqPerPeriod: number | undefined;
   periodMs: number | undefined;
@@ -17,6 +18,8 @@ export interface CliArgs {
   dryRun: boolean;
   verbose: boolean;
 }
+
+const DEFAULT_CDX_PAGE_SIZE = 128;
 
 export function parseArgs(): CliArgs {
   const argv = yargs(hideBin(process.argv))
@@ -39,6 +42,11 @@ export function parseArgs(): CliArgs {
       type: 'string',
       description: 'Path to SQLite database file',
       default: './wayback.db',
+    })
+    .option('cdx-page-size', {
+      type: 'number',
+      description: 'CDX API page size (env: CDX_PAGE_SIZE)',
+      default: DEFAULT_CDX_PAGE_SIZE,
     })
     .option('proxy-file', {
       type: 'string',
@@ -114,6 +122,14 @@ export function parseArgs(): CliArgs {
           'Either --max-req-per-second or --max-req-per-minute must be provided',
         );
       }
+      const cdxPageSize = args['cdx-page-size'];
+      if (
+        typeof cdxPageSize !== 'number' ||
+        !Number.isInteger(cdxPageSize) ||
+        cdxPageSize <= 0
+      ) {
+        throw new Error('--cdx-page-size must be a positive integer');
+      }
       return true;
     })
     .parseSync();
@@ -137,6 +153,7 @@ export function parseArgs(): CliArgs {
     all: argv.all as boolean,
     output: path.resolve(argv.output as string),
     db: path.resolve(argv.db as string),
+    cdxPageSize: argv['cdx-page-size'] as number,
     proxyFile: argv['proxy-file'] as string | undefined,
     maxReqPerPeriod,
     periodMs: maxReqPerPeriod !== undefined ? periodMs : undefined,

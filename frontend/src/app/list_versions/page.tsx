@@ -2,9 +2,11 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Spinner } from "@/components/ui/spinner";
+import { ErrorMessage } from "@/components/ui/error-message";
 import { Badge } from "@/components/ui/badge";
 import { REPLAY_SERVER_URL } from "@/lib/config";
 import {
@@ -35,6 +37,7 @@ interface BreadcrumbPart {
 interface ListVersionsData {
   url: string;
   versions: Version[];
+  nextCursor: number | null;
   breadcrumbs: BreadcrumbPart[];
 }
 
@@ -50,25 +53,58 @@ function ListVersionsInner() {
   const params = useSearchParams();
   const url = params.get("url") ?? "";
 
-  const [data, setData] = useState<ListVersionsData | null>(null);
+  const [versions, setVersions] = useState<Version[]>([]);
+  const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbPart[]>([]);
+  const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const fetchPage = useCallback((cursor: number | null, append: boolean) => {
+    const q = new URLSearchParams({ url });
+    if (cursor !== null) q.set("cursor", String(cursor));
+    (append ? setLoadingMore : setLoading)(true);
+    fetch(`/api/list_versions?${q}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(r.statusText);
+        return r.json() as Promise<ListVersionsData>;
+      })
+      .then((data) => {
+        if (!append) setBreadcrumbs(data.breadcrumbs);
+        setVersions((prev) => append ? [...prev, ...data.versions] : data.versions);
+        setNextCursor(data.nextCursor);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => (append ? setLoadingMore : setLoading)(false));
+  }, [url]);
 
   useEffect(() => {
     if (!url) return;
-    fetch(`/api/list_versions?url=${encodeURIComponent(url)}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(r.statusText);
-        return r.json();
-      })
-      .then(setData)
-      .catch((e) => setError(e.message));
-  }, [url]);
+    setVersions([]);
+    setNextCursor(null);
+    setError(null);
+    fetchPage(null, false);
+  }, [fetchPage, url]);
 
-  if (!url) return <p className="p-8 text-destructive">Missing url parameter</p>;
-  if (error) return <p className="p-8 text-destructive">{error}</p>;
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && nextCursor !== null && !loadingMore) {
+        fetchPage(nextCursor, true);
+      }
+    });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [nextCursor, loadingMore, fetchPage]);
+
+  if (!url) return <ErrorMessage message="Missing url parameter" />;
+  if (error) return <ErrorMessage message={error} />;
+  if (loading) return <Spinner />;
 
   return (
-    <div className="container max-w-4xl py-8 mx-auto px-4">
+    <div className="container max-w-5xl py-8 mx-auto px-4">
       <Breadcrumb className="mb-4">
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -76,11 +112,11 @@ function ListVersionsInner() {
               All domains
             </BreadcrumbLink>
           </BreadcrumbItem>
-          {(data?.breadcrumbs ?? []).map((crumb, i) => (
+          {breadcrumbs.map((crumb, i) => (
             <React.Fragment key={crumb.path}>
               <BreadcrumbSeparator />
               <BreadcrumbItem>
-                {i === (data?.breadcrumbs.length ?? 0) - 1 ? (
+                {i === breadcrumbs.length - 1 ? (
                   <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
                 ) : (
                   <BreadcrumbLink
@@ -99,18 +135,18 @@ function ListVersionsInner() {
       <h1 className="text-xl font-bold mb-1">Versions</h1>
       <p className="text-muted-foreground text-sm mb-4 break-all">{url}</p>
 
-      {!data ? null : data.versions.length === 0 ? (
+      {versions.length === 0 ? (
         <p className="text-muted-foreground">No versions found.</p>
       ) : (
         <ul className="divide-y border rounded-md">
-          {data.versions.map((v) => {
+          {versions.map((v) => {
             const ts = String(v.timestamp);
             return (
               <li key={v.timestamp} className="flex items-center gap-2 px-4 py-2 text-sm flex-wrap">
                 {v.status === "ok" || v.status === "redirect" ? (
                   <a
                     className="text-primary hover:underline"
-                    href={`${REPLAY_SERVER_URL}/replay/${v.timestamp}/${data.url}`}
+                    href={`${REPLAY_SERVER_URL}/replay/${v.timestamp}/${url}`}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -154,6 +190,11 @@ function ListVersionsInner() {
           })}
         </ul>
       )}
+
+      {/* Sentinel — triggers next page load when scrolled into view */}
+      <div ref={sentinelRef} className="py-4 flex justify-center">
+        {loadingMore && <Spinner />}
+      </div>
     </div>
   );
 }

@@ -2,14 +2,15 @@ import path from 'path';
 import { Worker, isMainThread, parentPort } from 'worker_threads';
 import Database from 'better-sqlite3';
 import type { FileMatch, SearchCondition } from './file_search';
-import type { WorkerRequest, WorkerResponse } from './file_search_worker';
+import type { WorkerRequest, WorkerSuccess } from './file_search_worker';
+import { type WorkerError } from './worker_utils';
 import { nestedIdPath } from './id-path';
 
 export const PAGE_SIZE = 40;
 
 interface CandidateRow {
-  url: string;
-  timestamp: number;
+  resource_version_url: string;
+  resource_version_timestamp: number;
   request_id: string;
   body_digest: string;
 }
@@ -18,7 +19,6 @@ export interface SearchScanRequest {
   dbPath: string;
   searchId: number;
   baseFolder: string;
-  charEncoding: string;
   maxWorkers: number;
   cdxFileIds: string[];
   cdxIdToDomain: [string, string][];
@@ -34,7 +34,6 @@ async function runSearchScan(req: SearchScanRequest): Promise<void> {
     dbPath,
     searchId,
     baseFolder,
-    charEncoding,
     maxWorkers,
     cdxFileIds,
     domainClause,
@@ -57,26 +56,37 @@ async function runSearchScan(req: SearchScanRequest): Promise<void> {
 
   const selectPage = db.prepare<Array<string | number>, CandidateRow>(`
     SELECT
-      rv.url,
-      rv.timestamp,
+      r.resource_version_url,
+      r.resource_version_timestamp,
       r.id as request_id,
       r.body_digest
     FROM resource_version rv
     JOIN request r ON r.id = rv.successful_request_id
     WHERE rv.successful_request_id IS NOT NULL
+      AND (r.resource_version_url, r.resource_version_timestamp) > (?, ?)
       AND r.mimetype = 'text/html'
       AND r.location IS NULL
       ${domainClause}
-      AND (rv.url, rv.timestamp) > (?, ?)
-    ORDER BY rv.url, rv.timestamp
-    LIMIT ${PAGE_SIZE}
+    ORDER BY r.resource_version_url, r.resource_version_timestamp
+    LIMIT ?
   `);
 
-  const insertFile = db.prepare<[number, string, number, string | null]>(
-    `INSERT INTO search_file (search_id, request_id, match_count, context_digest) VALUES (?, ?, ?, ?)`,
+  const insertFile = db.prepare<
+    [number, string, string, number, number, string, string, number]
+  >(
+    `INSERT INTO search_file (search_id, request_id, resource_version_url, resource_version_timestamp, match_count, context_digest, is_duplicate_context_digest)
+     VALUES (?, ?, ?, ?, ?,
+       ?,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM search_file sf2
+         WHERE sf2.context_digest = ? AND sf2.search_id = ?
+       ) THEN 1 ELSE 0 END)`,
   );
-  const insertFileError = db.prepare<[number, string, string, string]>(
-    `INSERT INTO search_file (search_id, request_id, match_count, error_name, error_message) VALUES (?, ?, 0, ?, ?)`,
+  const insertFileError = db.prepare<
+    [number, string, string, number, string, string]
+  >(
+    `INSERT INTO search_file_error (search_id, request_id, resource_version_url, resource_version_timestamp, error_name, error_message)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   );
   const insertMatch = db.prepare<[number, number, number, number]>(
     `INSERT INTO search_match (search_file_id, search_condition_id, match_offset, match_length) VALUES (?, ?, ?, ?)`,
@@ -85,14 +95,21 @@ async function runSearchScan(req: SearchScanRequest): Promise<void> {
   const saveMatches = db.transaction(
     (
       candidateId: string,
-      contextDigest: string | null,
+      url: string,
+      timestamp: number,
+      contextDigest: string,
       matches: FileMatch[],
     ) => {
+      if (matches.length === 0) return;
       const fileResult = insertFile.run(
         searchId,
         candidateId,
+        url,
+        timestamp,
         matches.length,
         contextDigest,
+        contextDigest,
+        searchId,
       );
       const searchFileId = fileResult.lastInsertRowid as number;
       for (const m of matches) {
@@ -107,8 +124,21 @@ async function runSearchScan(req: SearchScanRequest): Promise<void> {
   );
 
   const saveFileError = db.transaction(
-    (candidateId: string, errorName: string, errorMessage: string) => {
-      insertFileError.run(searchId, candidateId, errorName, errorMessage);
+    (
+      candidateId: string,
+      url: string,
+      timestamp: number,
+      errorName: string,
+      errorMessage: string,
+    ) => {
+      insertFileError.run(
+        searchId,
+        candidateId,
+        url,
+        timestamp,
+        errorName,
+        errorMessage,
+      );
     },
   );
 
@@ -134,10 +164,20 @@ async function runSearchScan(req: SearchScanRequest): Promise<void> {
   function runOnWorker(
     worker: Worker,
     workerReq: WorkerRequest,
-  ): Promise<WorkerResponse> {
+  ): Promise<WorkerSuccess> {
     return new Promise((resolve, reject) => {
-      worker.once('message', (msg: WorkerResponse) => resolve(msg));
-      worker.once('error', reject);
+      let settled = false;
+      worker.once('message', (msg: WorkerSuccess | WorkerError) => {
+        if (settled) return;
+        settled = true;
+        if (msg.result === 'error') reject(msg);
+        else resolve(msg);
+      });
+      worker.once('error', (err) => {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      });
       worker.postMessage(workerReq);
     });
   }
@@ -150,9 +190,10 @@ async function runSearchScan(req: SearchScanRequest): Promise<void> {
       pageNum++;
       const queryStart = Date.now();
       const candidates = selectPage.all(
-        ...cdxFileIds,
         cursor.url,
         cursor.timestamp,
+        ...cdxFileIds,
+        PAGE_SIZE,
       );
       console.log(
         `[search ${searchId}] Page ${pageNum}/${totalPages} query: ${Date.now() - queryStart}ms (${candidates.length} rows)`,
@@ -168,35 +209,35 @@ async function runSearchScan(req: SearchScanRequest): Promise<void> {
               2,
             ) + '.text';
           const worker = await acquireWorker();
-          let matchMs = 0;
+          const matchStart = Date.now();
           try {
-            const matchStart = Date.now();
             const response = await runOnWorker(worker, {
               filePath,
               conditions,
-              charEncoding,
             } satisfies WorkerRequest);
-            matchMs = Date.now() - matchStart;
-            if ('errorName' in response) {
-              console.error(
-                `[search ${searchId}] Error reading ${filePath}: ${response.errorName}: ${response.errorMessage}`,
-              );
-              saveFileError(
-                candidate.request_id,
-                response.errorName,
-                response.errorMessage,
-              );
-              return 0;
-            }
             saveMatches(
               candidate.request_id,
+              candidate.resource_version_url,
+              candidate.resource_version_timestamp,
               response.contextDigest,
               response.matches,
             );
-            return matchMs;
+          } catch (workerErr) {
+            const e = workerErr as WorkerError;
+            console.error(
+              `[search ${searchId}] Error reading ${filePath}: ${e.name}: ${e.message}`,
+            );
+            saveFileError(
+              candidate.request_id,
+              candidate.resource_version_url,
+              candidate.resource_version_timestamp,
+              e.name,
+              e.message,
+            );
           } finally {
             releaseWorker(worker);
           }
+          return Date.now() - matchStart;
         })(),
       );
 
@@ -212,7 +253,10 @@ async function runSearchScan(req: SearchScanRequest): Promise<void> {
         `[search ${searchId}] Page ${pageNum}/${totalPages} done — files: ${timings.length}, total: ${totalMatchMs}ms, avg: ${avgMatchMs}ms, max: ${maxMatchMs}ms`,
       );
       const last = candidates[candidates.length - 1];
-      cursor = { url: last.url, timestamp: last.timestamp };
+      cursor = {
+        url: last.resource_version_url,
+        timestamp: last.resource_version_timestamp,
+      };
       updateScanned.run(candidates.length, searchId);
     }
   } finally {

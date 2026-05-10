@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Toggle } from "@/components/ui/toggle";
+import { ToggleGroupWithSelectAll } from "@/components/ToggleGroupWithSelectAll";
 
 interface Domain {
   id: string;
@@ -48,15 +49,6 @@ export default function SearchFormPage() {
     setConditions((prev) =>
       prev.map((c, idx) => (idx === i ? { ...c, [field]: value } : c))
     );
-  }
-
-  function toggleDomain(id: string) {
-    setSelectedDomains((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -111,7 +103,7 @@ export default function SearchFormPage() {
   }
 
   return (
-    <div className="container max-w-4xl py-8 mx-auto px-4">
+    <div className="container max-w-5xl py-8 mx-auto px-4">
 
       <h1 className="text-2xl font-bold mb-6">New Search</h1>
 
@@ -171,40 +163,23 @@ export default function SearchFormPage() {
           </Button>
         </div>
 
-        <div>
-          <div className="flex items-baseline justify-between mb-1">
-            <h2 className="text-base font-semibold">Domains</h2>
-            <div className="flex gap-2">
-              <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setSelectedDomains(new Set(domains.map((d) => d.id)))}>Select all</Button>
-              <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setSelectedDomains(new Set())}>Select none</Button>
-            </div>
-          </div>
-          {domains.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No domains found in database.</p>
-          ) : (
-            <div className="flex flex-wrap mt-2">
-              {domains.map((d, i) => (
-                <Toggle
-                  key={d.id}
-                  size="sm"
-                  pressed={selectedDomains.has(d.id)}
-                  onPressedChange={(pressed) =>
-                    setSelectedDomains((prev) => {
-                      const next = new Set(prev);
-                      if (pressed) next.add(d.id); else next.delete(d.id);
-                      return next;
-                    })
-                  }
-                  className={`border border-input border-r-0 rounded-none data-[state=on]:bg-primary data-[state=on]:text-primary-foreground ${
-                    i === 0 ? "rounded-l-md" : ""
-                  } ${i === domains.length - 1 ? "rounded-r-md border-r" : ""}`}
-                >
-                  {d.domain}
-                </Toggle>
-              ))}
-            </div>
+        <ToggleGroupWithSelectAll
+          label="Domains"
+          items={domains.map((d) => ({ id: d.id, label: d.domain }))}
+          selected={selectedDomains}
+          onChange={setSelectedDomains}
+          renderItem={(item, isSelected, toggle) => (
+            <Toggle
+              key={item.id}
+              size="sm"
+              pressed={isSelected}
+              onPressedChange={toggle}
+              className="border border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+            >
+              {item.label}
+            </Toggle>
           )}
-        </div>
+        />
 
         {error && <p className="text-sm text-destructive">{error}</p>}
 

@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { Spinner } from "@/components/ui/spinner";
+import { ErrorMessage } from "@/components/ui/error-message";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,7 +17,6 @@ interface Condition {
 interface Search {
   id: number;
   created_at: string;
-  char_encoding: string;
   status: string;
   file_count: number;
   scanned_file_count: number;
@@ -40,13 +41,17 @@ function statusBadge(status: string) {
 export default function SearchesPage() {
   const router = useRouter();
   const [data, setData] = useState<SearchesData | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
 
   const load = useCallback(() => {
     fetch("/api/searches")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(r.statusText);
+        return r.json();
+      })
       .then(setData)
-      .catch(() => {});
+      .catch((e) => setError(e.message));
   }, []);
 
   useEffect(() => {
@@ -65,12 +70,15 @@ export default function SearchesPage() {
     load();
   }
 
+  if (error) return <ErrorMessage message={error} />;
+  if (data === null) return <Spinner />;
+
   return (
-    <div className="container max-w-4xl py-8 mx-auto px-4">
+    <div className="container max-w-5xl py-8 mx-auto px-4">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">All Searches</h1>
         <div className="flex gap-2">
-          {data?.hasRunning && (
+          {data.hasRunning && (
             <>
               <Button variant="outline" size="sm" onClick={load}>
                 ↻ Refresh
@@ -89,14 +97,12 @@ export default function SearchesPage() {
           </Button>
         </div>
       </div>
-
-      {data === null && <p className="text-muted-foreground">Loading…</p>}
-      {data?.searches.length === 0 && (
+      {data.searches.length === 0 && (
         <p className="text-muted-foreground">No searches yet.</p>
       )}
 
       <div className="space-y-3">
-        {data?.searches.map((s) => {
+        {data.searches.map((s) => {
           const pct =
             s.file_count > 0
               ? Math.round((s.scanned_file_count / s.file_count) * 100)
@@ -108,7 +114,6 @@ export default function SearchesPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold">Search #{s.id}</span>
                     <span className="text-muted-foreground text-sm">{s.created_at}</span>
-                    <Badge variant="secondary">{s.char_encoding}</Badge>
                     {statusBadge(s.status)}
                   </div>
                   <div className="flex gap-2 shrink-0">
@@ -164,7 +169,7 @@ export default function SearchesPage() {
                         {s.scanned_file_count} / {s.file_count} ({pct}%)
                       </span>
                     </div>
-                    <Progress value={pct} className="h-1.5" />
+                    <Progress value={pct} indeterminate className="h-1.5" />
                   </div>
                 )}
                 {s.status === "error" && (

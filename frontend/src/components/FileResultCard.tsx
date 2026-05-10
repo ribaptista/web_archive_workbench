@@ -68,6 +68,8 @@ export interface MatchedCondition {
 
 export interface FileResultCardProps {
   bodyDigest: string;
+  resourceVersionUrl: string;
+  resourceVersionTimestamp: number;
   original: string;
   timestamp: string;
   matchCount?: number;
@@ -76,13 +78,16 @@ export interface FileResultCardProps {
   fileError?: string | null;
   reactionTypes: ReactionType[];
   activeReactions: Set<string>;
-  onToggleReaction: (bodyDigest: string, reactionTypeId: number) => void;
+  onToggleReaction: (url: string, timestamp: number, reactionTypeId: number) => void;
   onSimilarClick?: () => void;
   matchedConditions?: MatchedCondition[];
+  similarGroupReactionTypeIds?: number[];
 }
 
 export function FileResultCard({
   bodyDigest,
+  resourceVersionUrl,
+  resourceVersionTimestamp,
   original,
   timestamp,
   matchCount,
@@ -94,7 +99,9 @@ export function FileResultCard({
   onToggleReaction,
   onSimilarClick,
   matchedConditions,
+  similarGroupReactionTypeIds,
 }: FileResultCardProps) {
+  const reactionKey = (rtId: number) => `${resourceVersionUrl}|${resourceVersionTimestamp}:${rtId}`;
   return (
     <Card>
       <CardContent className="py-3">
@@ -155,23 +162,33 @@ export function FileResultCard({
             )}
           </div>
           {reactionTypes.length > 0 && (
-            <div className="flex flex-row flex-wrap gap-1 mt-2">
-              {reactionTypes.map((rt) => {
-                const isActive = activeReactions.has(`${bodyDigest}:${rt.id}`);
-                return (
-                  <Toggle
-                    key={rt.id}
-                    pressed={isActive}
-                    onPressedChange={() => onToggleReaction(bodyDigest, rt.id)}
-                    aria-label={rt.label}
-                    size="sm"
-                    className="aria-pressed:bg-primary/10 aria-pressed:text-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary"
-                  >
-                    <DynamicIcon name={rt.emoji} active={isActive} />
-                    {rt.label !== "Like" && <span>{rt.label}</span>}
-                  </Toggle>
-                );
-              })}
+            <div className="flex flex-col gap-1 mt-2">
+              <div className="flex flex-row flex-wrap gap-1">
+                {reactionTypes.map((rt) => {
+                  const isActive = activeReactions.has(reactionKey(rt.id));
+                  return (
+                    <Toggle
+                      key={rt.id}
+                      pressed={isActive}
+                      onPressedChange={() => onToggleReaction(resourceVersionUrl, resourceVersionTimestamp, rt.id)}
+                      aria-label={rt.label}
+                      size="sm"
+                      className="aria-pressed:bg-primary/10 aria-pressed:text-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary"
+                    >
+                      <DynamicIcon name={rt.emoji} active={isActive} />
+                      {rt.label !== "Like" && <span>{rt.label}</span>}
+                    </Toggle>
+                  );
+                })}
+              </div>
+              {similarGroupReactionTypeIds && similarGroupReactionTypeIds.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {reactionTypes
+                    .filter((rt) => similarGroupReactionTypeIds.includes(rt.id))
+                    .map((rt) => rt.label)
+                    .join(', ')} in similar results
+                </p>
+              )}
             </div>
           )}
         </div>

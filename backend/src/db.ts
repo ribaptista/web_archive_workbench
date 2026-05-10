@@ -1,8 +1,16 @@
 import Database from 'better-sqlite3';
 import type { Database as DB } from 'better-sqlite3';
 
+// NULL-safe equality operator for use in prepared statement WHERE clauses.
+// SQLite:    `col IS ?`                   — works for both NULL and non-NULL values.
+// PostgreSQL: `col IS NOT DISTINCT FROM $n` — replace if switching databases;
+//             plain `col = $n` does NOT match NULL = NULL in postgres.
+export const SQL_NULL_SAFE_EQ = 'IS';
+
 export function openDatabase(filePath: string): DB {
-  const db = new Database(filePath);
+  const db = new Database(filePath, {
+    verbose: console.log,
+  });
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
@@ -24,6 +32,10 @@ export function openDatabase(filePath: string): DB {
       run_id TEXT NOT NULL REFERENCES run(id),
       domain TEXT NOT NULL UNIQUE,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      total_count INTEGER NOT NULL DEFAULT 0,
+      downloaded_count INTEGER NOT NULL DEFAULT 0,
+      errored_count INTEGER NOT NULL DEFAULT 0,
+      pending_count INTEGER NOT NULL DEFAULT 0,
       UNIQUE(domain)
     );
 
@@ -62,7 +74,10 @@ export function openDatabase(filePath: string): DB {
     CREATE TABLE IF NOT EXISTS resource_version (
       url TEXT NOT NULL,
       timestamp INTEGER NOT NULL,
-      successful_request_id TEXT REFERENCES request(id) ON DELETE SET NULL,
+      successful_request_id TEXT REFERENCES request(id) ON DELETE RESTRICT,
+      last_errored_request_id TEXT REFERENCES request(id) ON DELETE RESTRICT,
+
+      CHECK (successful_request_id IS NULL OR last_errored_request_id IS NULL),
 
       PRIMARY KEY (url, timestamp),
       FOREIGN KEY (url) REFERENCES resource(url) ON DELETE CASCADE
@@ -93,6 +108,9 @@ export function openDatabase(filePath: string): DB {
       proxy_address TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       is_successful INTEGER NOT NULL,
+      encoding TEXT,
+      encoding_source TEXT,
+      chardet_confidence REAL,
 
       FOREIGN KEY (resource_version_url, resource_version_timestamp) REFERENCES resource_version(url, timestamp) ON DELETE CASCADE
     );
@@ -115,6 +133,12 @@ export function openDatabase(filePath: string): DB {
     -- findNewEntries: WHERE ce.raw = ? (UNIQUE(cdx_id,raw) has cdx_id first, so raw-only lookup needs its own index)
     CREATE INDEX IF NOT EXISTS idx_cdx_entry_raw ON cdx_entry(raw);
 
+    -- getRunsData: COUNT(*) FROM cdx_entry WHERE run_id = ?
+    CREATE INDEX IF NOT EXISTS idx_cdx_entry_run_id ON cdx_entry(run_id);
+
+    -- getRunsData: COUNT(*) FROM request WHERE run_id = ?
+    CREATE INDEX IF NOT EXISTS idx_request_run_id_id ON request(run_id, id);
+
     -- runRetryMode: JOIN resource_version_source ON rvs.cdx_id = cf.id
     CREATE INDEX IF NOT EXISTS idx_resource_version_source_cdx_id ON resource_version_source(cdx_id);
 
@@ -124,13 +148,46 @@ export function openDatabase(filePath: string): DB {
     -- runRetryMode subquery: JOIN request r ON r.resource_version_url = rv.url AND r.resource_version_timestamp = rv.timestamp
     CREATE INDEX IF NOT EXISTS idx_request_resource_version ON request(resource_version_url, resource_version_timestamp);
 
+    -- getRunsData downloadedByDomain: successful requests by (resource_version_url, resource_version_timestamp)
+    CREATE INDEX IF NOT EXISTS idx_request_run_id_resource_version_is_successful
+      ON request(run_id, resource_version_url, resource_version_timestamp, is_successful);
+
     -- runRetryMode subquery: JOIN request_errors re / request r ON r.id = re.request_id
     CREATE INDEX IF NOT EXISTS idx_request_errors_request_id ON request_errors(request_id);
+
+    -- getRunsData errorsByType: JOIN request r ON r.id = re.request_id, GROUP BY re.error_name, re.error_code
+    CREATE INDEX IF NOT EXISTS idx_request_errors_request_id_error_name_error_code
+      ON request_errors(request_id, error_name, error_code);
 
     -- run_search_handler count + search_scan selectPage: JOIN request r WHERE r.mimetype = 'text/html' AND r.location IS NULL;
     -- covering index lets SQLite filter by mimetype + location and read body_digest without a heap lookup
     CREATE INDEX IF NOT EXISTS idx_request_mimetype_location_body_digest ON request(mimetype, location, body_digest);
+
+    -- run_search_handler count + search_scan selectPage:
+    -- JOIN request r / resource_version_source rvs, filter r.mimetype and scan by (resource_version_url, resource_version_timestamp)
+    CREATE INDEX IF NOT EXISTS idx_request_v_url_ts_location_null
+      ON request(mimetype, resource_version_url, resource_version_timestamp)
+      WHERE location IS NULL
+      AND mimetype = 'text/html';
+
+    CREATE INDEX IF NOT EXISTS idx_resource_version_source_cdx_id_url_timestamp 
+      ON resource_version_source (cdx_id, url, timestamp);
   `);
+
+  // Migrations for existing databases
+  const existingCols = db.prepare(`PRAGMA table_info(request)`).all() as {
+    name: string;
+  }[];
+  const colNames = new Set(existingCols.map((c) => c.name));
+  if (!colNames.has('encoding')) {
+    db.exec(`ALTER TABLE request ADD COLUMN encoding TEXT`);
+  }
+  if (!colNames.has('encoding_source')) {
+    db.exec(`ALTER TABLE request ADD COLUMN encoding_source TEXT`);
+  }
+  if (!colNames.has('chardet_confidence')) {
+    db.exec(`ALTER TABLE request ADD COLUMN chardet_confidence REAL`);
+  }
 
   return db;
 }

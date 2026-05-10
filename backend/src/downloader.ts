@@ -4,12 +4,13 @@ import { promisify } from 'util';
 import { gunzip } from 'zlib';
 import { createHash, randomUUID } from 'crypto';
 import { request as undiciRequest } from 'undici';
-import mime from 'mime-types';
 import type { DB } from './db';
+import { SQL_NULL_SAFE_EQ } from './db';
 import { pickProxy, type ProxyEntry } from './proxy';
-import { htmlExtractToFiles } from './html_ndjson';
+import { htmlExtractToFiles } from './html';
 import { insertTreeNodePaths } from './tree-node-utils';
 import { nestedIdPath } from './id-path';
+import { detectEncoding } from './encoding';
 
 const gunzipAsync = promisify(gunzip);
 
@@ -115,6 +116,12 @@ export interface DownloadTask {
   outputFolder: string;
 }
 
+interface ResourceVersionState {
+  successfulRequestId: string | null;
+  lastErroredRequestId: string | null;
+  status: 'pending' | 'errored' | 'successful';
+}
+
 export async function downloadEntry(
   db: DB,
   task: DownloadTask,
@@ -126,13 +133,15 @@ export async function downloadEntry(
       resource_version_url, resource_version_timestamp,
       status_code, body_digest, inferred_gzip,
       duration_ms, proxy_address, is_successful,
-      mimetype, location, location_original, location_timestamp
+      mimetype, location, location_original, location_timestamp,
+      encoding, encoding_source, chardet_confidence
     )
     SELECT ?, ?,
            ?, ?,
            ?, ?, ?,
            ?, ?, ?,
-           ?, ?, ?, ?
+           ?, ?, ?, ?,
+           ?, ?, ?
     WHERE NOT EXISTS (
       SELECT 1 FROM resource_version
       WHERE url = ? AND timestamp = ? AND successful_request_id IS NOT NULL
@@ -155,13 +164,124 @@ export async function downloadEntry(
   const insertResourceVersionSource = db.prepare(`
     INSERT OR IGNORE INTO resource_version_source (url, timestamp, cdx_id) VALUES (?, ?, ?)
   `);
-  const updateResourceVersionSuccess = db.prepare(`
+  const queryResourceVersionState = db.prepare<
+    [string, number],
+    {
+      successful_request_id: string | null;
+      last_errored_request_id: string | null;
+    }
+  >(`
+    SELECT successful_request_id, last_errored_request_id
+    FROM resource_version WHERE url = ? AND timestamp = ?
+  `);
+  const setSuccessfulRequest = db.prepare(`
     UPDATE resource_version
-    SET successful_request_id = ?
-    WHERE url = ? AND timestamp = ? AND successful_request_id IS NULL
+    SET successful_request_id = ?, last_errored_request_id = NULL
+    WHERE url = ? AND timestamp = ?
+      AND successful_request_id ${SQL_NULL_SAFE_EQ} ?
+      AND last_errored_request_id ${SQL_NULL_SAFE_EQ} ?
+  `);
+  const setLastErroredRequest = db.prepare(`
+    UPDATE resource_version
+    SET last_errored_request_id = ?
+    WHERE url = ? AND timestamp = ?
+      AND successful_request_id ${SQL_NULL_SAFE_EQ} ?
+      AND last_errored_request_id ${SQL_NULL_SAFE_EQ} ?
+  `);
+  // Adjust cdx_file counters: pass +1/0/-1 for each of downloaded, errored, pending
+  const updateCdxCounters = db.prepare(`
+    UPDATE cdx_file
+    SET downloaded_count = downloaded_count + ?,
+        errored_count    = errored_count    + ?,
+        pending_count    = pending_count    + ?
+    WHERE id = (SELECT cdx_id FROM resource_version_source WHERE url = ? AND timestamp = ? LIMIT 1)
   `);
 
+  function getResourceVersionState(
+    urlOriginal: string,
+    urlTimestamp: number,
+  ): ResourceVersionState {
+    const row = queryResourceVersionState.get(urlOriginal, urlTimestamp);
+    if (!row)
+      throw new Error(
+        `resource_version not found: ${urlOriginal} @ ${urlTimestamp}`,
+      );
+    const {
+      successful_request_id: successfulRequestId,
+      last_errored_request_id: lastErroredRequestId,
+    } = row;
+    if (successfulRequestId != null && lastErroredRequestId != null)
+      throw new Error(
+        `Refreshing a previously successful resource is not implemented: ${urlOriginal} @ ${urlTimestamp}`,
+      );
+    const status: ResourceVersionState['status'] =
+      successfulRequestId == null && lastErroredRequestId == null
+        ? 'pending'
+        : successfulRequestId == null
+          ? 'errored'
+          : 'successful';
+    return { successfulRequestId, lastErroredRequestId, status };
+  }
+
   let currentUrl = buildWaybackUrl(task.timestamp, task.original);
+
+  // Returns true if this is the first successful download of the resource
+  // (used to decide whether to keep generated files).
+  // Uses optimistic locking: if .changes === 0, another worker won the race.
+  function applySuccessfulResourceVersionResult(
+    urlOriginal: string,
+    urlTimestamp: number,
+    requestId: string,
+  ): boolean {
+    const { successfulRequestId, lastErroredRequestId, status } =
+      getResourceVersionState(urlOriginal, urlTimestamp);
+    // Treat an already-successful resource as a concurrent winner — don't
+    // overwrite the existing successful_request_id or touch any counters.
+    if (status === 'successful') return false;
+    const r = setSuccessfulRequest.run(
+      requestId,
+      urlOriginal,
+      urlTimestamp,
+      successfulRequestId,
+      lastErroredRequestId,
+    );
+    if (r.changes === 0) return false; // lost race
+    switch (status) {
+      case 'pending':
+        updateCdxCounters.run(1, 0, -1, urlOriginal, urlTimestamp);
+        return true;
+      case 'errored':
+        updateCdxCounters.run(1, -1, 0, urlOriginal, urlTimestamp);
+        return true;
+    }
+  }
+
+  // Uses optimistic locking: if .changes === 0, another worker won the race.
+  function applyErroredResourceVersionResult(
+    urlOriginal: string,
+    urlTimestamp: number,
+    requestId: string,
+  ): void {
+    const { successfulRequestId, lastErroredRequestId, status } =
+      getResourceVersionState(urlOriginal, urlTimestamp);
+    // Treat an already-successful resource as a concurrent winner — don't
+    // overwrite the existing successful_request_id or touch any counters.
+    if (status === 'successful') return;
+    const r = setLastErroredRequest.run(
+      requestId,
+      urlOriginal,
+      urlTimestamp,
+      successfulRequestId,
+      lastErroredRequestId,
+    );
+    if (r.changes === 0) return; // lost race
+    switch (status) {
+      case 'pending':
+        updateCdxCounters.run(0, 1, -1, urlOriginal, urlTimestamp);
+        break;
+      // errored    → no counter change (already in errored bucket)
+    }
+  }
   let redirectChainCount = 0;
   const { runId, outputFolder } = task;
   const visitedUrls = new Set<string>();
@@ -209,6 +329,9 @@ export async function downloadEntry(
         null,
         null,
         null,
+        null,
+        null,
+        null,
         urlOriginal,
         urlTimestamp,
       );
@@ -219,6 +342,7 @@ export async function downloadEntry(
         message: errMessage,
       } = parseError(err);
       insertRequestError.run(errorID, errName, errCode, errMessage);
+      applyErroredResourceVersionResult(urlOriginal, urlTimestamp, errorID);
       return false;
     }
 
@@ -333,6 +457,12 @@ export async function downloadEntry(
       : null;
     const isSuccessful = errors.length === 0;
 
+    // Detect encoding for HTML responses
+    const detectedEncoding =
+      responseMimetype === 'text/html' && finalBody
+        ? detectEncoding(responseHeaders, finalBody)
+        : null;
+
     // Insert request row, errors, and headers in a single transaction
     let skipped = false;
     let redirectTargetIsNew = false;
@@ -353,6 +483,9 @@ export async function downloadEntry(
         locationHeader,
         parsedRedirectTarget?.original ?? null,
         parsedRedirectTarget?.timestamp ?? null,
+        detectedEncoding?.encoding ?? null,
+        detectedEncoding?.source ?? null,
+        detectedEncoding?.chardetConfidence ?? null,
         urlOriginal,
         urlTimestamp,
       );
@@ -373,7 +506,7 @@ export async function downloadEntry(
         }
       }
 
-      if (isRedirect(statusCode) && errors.length === 0) {
+      if (isRedirect(statusCode) && isSuccessful) {
         insertTreeNodePaths(db, [parsedRedirectTarget!.original]);
         insertResource.run(parsedRedirectTarget!.original);
         const r = insertResourceVersion.run(
@@ -382,25 +515,30 @@ export async function downloadEntry(
           parsedRedirectTarget!.timestamp,
         );
         redirectTargetIsNew = r.changes > 0;
-        insertResourceVersionSource.run(
+        const rvsr = insertResourceVersionSource.run(
           parsedRedirectTarget!.original,
           parsedRedirectTarget!.timestamp,
           task.cdxId,
         );
+        if (rvsr.changes > 0) {
+          db.prepare(
+            `UPDATE cdx_file SET total_count = total_count + 1, pending_count = pending_count + 1 WHERE id = ?`,
+          ).run(task.cdxId);
+        }
       }
 
       if (isSuccessful) {
-        const ur = updateResourceVersionSuccess.run(
-          requestId,
+        isNewSuccessfulRequest = applySuccessfulResourceVersionResult(
           urlOriginal,
           urlTimestamp,
+          requestId,
         );
-        isNewSuccessfulRequest = ur.changes > 0;
+      } else {
+        applyErroredResourceVersionResult(urlOriginal, urlTimestamp, requestId);
       }
     });
 
     let finalAssetPath: string | null = null;
-    let symlinkPath: string | null = null;
     let rawBodyPath: string | null = null;
 
     if (inferredGzip) {
@@ -439,29 +577,20 @@ export async function downloadEntry(
             'svg',
             'math',
           ],
+          inputEncoding: detectedEncoding?.encoding,
         });
       }
-      symlinkPath = await createSymlink(
-        currentUrl,
-        urlOriginal,
-        urlTimestamp,
-        requestId,
-        responseMimetype,
-        bodyDigest,
-        finalAssetPath,
-        outputFolder,
-      );
     }
 
     insertAll();
 
     if (skipped) {
-      await deleteGeneratedFiles(symlinkPath, rawBodyPath);
+      await deleteGeneratedFiles(rawBodyPath);
       return true;
     }
 
     if (isSuccessful && !isNewSuccessfulRequest) {
-      await deleteGeneratedFiles(symlinkPath, rawBodyPath);
+      await deleteGeneratedFiles(rawBodyPath);
     }
 
     // Follow redirect
@@ -530,78 +659,8 @@ async function saveFinalBody(
   }
 }
 
-async function deleteGeneratedFiles(
-  symlinkPath: string | null,
-  rawBodyPath: string | null,
-): Promise<void> {
-  if (symlinkPath) {
-    await fs.promises.unlink(symlinkPath).catch(() => {});
-  }
+async function deleteGeneratedFiles(rawBodyPath: string | null): Promise<void> {
   if (rawBodyPath) {
     await fs.promises.unlink(rawBodyPath).catch(() => {});
   }
-}
-
-async function createSymlink(
-  _currentUrl: string,
-  urlOriginal: string,
-  urlTimestamp: number,
-  requestId: string,
-  mimetype: string | null,
-  digest: string,
-  finalAssetPath: string,
-  outputFolder: string,
-): Promise<string> {
-  // Replace non-safe characters with percent-encoded versions
-  // Safe chars: . - _ / a-z A-Z 0-9
-  let safePath = urlOriginal.replace(/[^.\-_/a-zA-Z0-9]/g, (ch) => {
-    return encodeURIComponent(ch);
-  });
-
-  // Replace all `/` occurrences with `/%2F`
-  safePath = safePath.replace(/\//g, '/%2F');
-
-  // Truncate any path part longer than 128 chars to first 64 + `_` + sha256(part, base64)
-  safePath = safePath
-    .split('/')
-    .map((part) => {
-      if (part.length <= 128) return part;
-      const hash = createHash('sha256').update(part).digest('base64url');
-      return `${part.slice(0, 64)}_${hash}`;
-    })
-    .join('/');
-
-  const ext = mimetype
-    ? mime.extension(mimetype) || mimetype.replace(/[^a-zA-Z0-9\-_]/g, '_')
-    : 'bin';
-  const extSuffix = `.${ext}`;
-
-  // Build final symlink filename
-  const linkName = `${safePath}_${urlTimestamp}_${requestId}_${digest}${extSuffix}`;
-  const symlinkPath = path.join(outputFolder, linkName);
-
-  // Ensure parent directory exists
-  await fs.promises.mkdir(path.dirname(symlinkPath), { recursive: true });
-
-  // Create symlink (relative path from symlink location to asset)
-  const relTarget = path.relative(path.dirname(symlinkPath), finalAssetPath);
-
-  try {
-    await fs.promises.symlink(relTarget, symlinkPath);
-  } catch (err: unknown) {
-    const nodeErr = err as NodeJS.ErrnoException;
-    if (nodeErr.code === 'EEXIST') {
-      const existing = await fs.promises
-        .readlink(symlinkPath)
-        .catch(() => null);
-      if (existing !== relTarget) {
-        throw new Error(
-          `Output directory is corrupted: symlink at "${symlinkPath}" points to "${existing}" but expected "${relTarget}"`,
-        );
-      }
-    } else {
-      throw err;
-    }
-  }
-  return symlinkPath;
 }

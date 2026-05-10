@@ -5,51 +5,98 @@ import cliProgress from 'cli-progress';
 import { parseArgs } from './cli';
 import { openDatabase, insertRun, insertRunArgs } from './db';
 import { fetchCdxRows, insertCdxEntries, getOrCreateCdxFile } from './cdx';
-import { findNewEntries, type ParsedCdxEntry } from './sync';
+import { findNewEntries } from './sync';
 import { loadProxies } from './proxy';
 import { downloadEntry, type DownloadTask } from './downloader';
 
 import type { Database as DB } from 'better-sqlite3';
 
+const NEW_ENTRIES_PREVIEW_CAP = 16;
+const RETRY_ENTRIES_PREVIEW_CAP = 16;
+const RETRY_TASK_PAGE_SIZE = 128;
+
+type NewEntryPreview = {
+  original: string | null;
+  timestamp: number | null;
+};
+
+function appendNewEntryPreviewsCapped(
+  target: NewEntryPreview[],
+  entries: Array<{ original: string | null; timestamp: number | null }>,
+): void {
+  for (const e of entries) {
+    if (target.length >= NEW_ENTRIES_PREVIEW_CAP) break;
+    target.push({
+      original: e.original,
+      timestamp: e.timestamp,
+    });
+  }
+}
+
 function resolveDomains(
   db: DB,
   args: { all: boolean; domain: string[] },
-): string[] {
+  runId: string,
+): Map<string, string> {
+  const domains = new Map<string, string>();
   if (args.all) {
     const rows = db
-      .prepare(`SELECT domain FROM cdx_file ORDER BY domain`)
-      .all() as { domain: string }[];
-    return rows.map((r) => r.domain);
+      .prepare(`SELECT id, domain FROM cdx_file ORDER BY domain`)
+      .all() as { id: string; domain: string }[];
+    for (const row of rows) {
+      domains.set(row.id, row.domain);
+    }
+    return domains;
   }
-  return args.domain;
+
+  for (const domain of args.domain) {
+    const cdxId = getOrCreateCdxFile(db, domain, runId);
+    domains.set(cdxId, domain);
+  }
+  return domains;
 }
 
-function printRetryDryRunSummary(
-  summary: Array<{ domain: string; entries: RetryEntry[] }>,
+function printDownloadPlanSummary(
+  summary: Array<{
+    domain: string;
+    entriesCapped?: RetryEntry[];
+    pendingCount: number;
+  }>,
   verbose: boolean,
 ): void {
-  console.log('\n--- Dry-run Summary (retry mode) ---');
+  console.log('\n--- Download plan summary ---');
   for (const s of summary) {
-    console.log(`  ${s.domain}: ${s.entries.length} entries to retry`);
-    if (verbose && s.entries.length > 0) {
-      for (const e of s.entries) {
+    const entriesCapped = s.entriesCapped ?? [];
+    console.log(`  ${s.domain}: ${s.pendingCount} entries to download`);
+    if (verbose && entriesCapped.length > 0) {
+      for (const e of entriesCapped) {
         console.log(`    [${e.timestamp}] ${e.url}`);
+      }
+      if (s.pendingCount > entriesCapped.length) {
+        console.log(`    and ${s.pendingCount - entriesCapped.length} more`);
       }
     }
   }
 }
 
 function printSyncDryRunSummary(
-  summary: Array<{ domain: string; newEntries: ParsedCdxEntry[] }>,
+  summary: Array<{
+    domain: string;
+    newEntriesCapped: NewEntryPreview[];
+    newEntryCount: number;
+  }>,
   verbose: boolean,
 ): void {
   console.log('\n--- Dry-run Summary ---');
   for (const s of summary) {
-    console.log(`  ${s.domain}: ${s.newEntries.length} new entries`);
-    if (verbose && s.newEntries.length > 0) {
-      for (const e of s.newEntries) {
+    console.log(`  ${s.domain}: ${s.newEntryCount} new entries`);
+    if (verbose && s.newEntriesCapped.length > 0) {
+      for (const e of s.newEntriesCapped) {
+        console.log(`    [${e.timestamp ?? '-'}] ${e.original}`);
+      }
+      if (s.newEntryCount > s.newEntriesCapped.length) {
         console.log(
-          `    [${e.timestamp ?? '-'}] ${e.original} (${e.mimetype}, status=${e.statusCode ?? '-'}, digest=${e.digest}, length=${e.length ?? '-'})`,
+          `    and ${s.newEntryCount - s.newEntriesCapped.length} more`,
         );
       }
     }
@@ -62,27 +109,23 @@ type RetryEntry = {
   cdx_id: string;
 };
 
-async function runRetryMode(
-  db: DB,
-  domains: string[],
-  args: {
-    skipErrors: string[];
-    skipErrorMessages: string[];
-    dryRun: boolean;
-    verbose: boolean;
-    output: string;
-  },
-  runId: string,
-  runDownloads: (tasks: DownloadTask[]) => Promise<void>,
-): Promise<void> {
-  const summary: Array<{ domain: string; entries: RetryEntry[] }> = [];
-  const allTasks: DownloadTask[] = [];
+type PendingTaskCounts = {
+  total: number;
+  byDomainId: Map<string, number>;
+};
 
+function buildSkipErrorFilter(
+  skipErrors: string[],
+  skipErrorMessages: string[],
+): {
+  skipErrorParams: string[];
+  skipErrorExistsClause: string;
+} {
   const skipErrorFilters = [
-    ...args.skipErrors.map(() => `re.error_code = ?`),
-    ...args.skipErrorMessages.map(() => `re.error_message LIKE ?`),
+    ...skipErrors.map(() => `re.error_code = ?`),
+    ...skipErrorMessages.map(() => `re.error_message LIKE ?`),
   ].join(' OR ');
-  const skipErrorParams = [...args.skipErrors, ...args.skipErrorMessages];
+  const skipErrorParams = [...skipErrors, ...skipErrorMessages];
   const skipErrorExistsClause = skipErrorFilters.length
     ? `AND NOT EXISTS (
         SELECT 1 FROM request_errors re
@@ -93,94 +136,237 @@ async function runRetryMode(
       )`
     : '';
 
-  for (const domain of domains) {
-    console.log(`\nDomain: ${domain}`);
+  return { skipErrorParams, skipErrorExistsClause };
+}
 
-    const pendingEntries = db
-      .prepare(
-        `
-        SELECT rv.url, rv.timestamp, rvs.cdx_id
-          FROM resource_version rv
-          JOIN resource_version_source rvs ON rvs.url = rv.url AND rvs.timestamp = rv.timestamp
-          JOIN cdx_file cf ON rvs.cdx_id = cf.id
-          WHERE cf.domain = ?
-            AND rv.successful_request_id IS NULL
-            ${skipErrorExistsClause}`,
-      )
-      .all(domain, ...skipErrorParams) as RetryEntry[];
-
-    console.log(`  ${pendingEntries.length} entries to retry.`);
-    summary.push({ domain, entries: pendingEntries });
-
-    const outputFolder = args.output;
-    for (const entry of pendingEntries) {
-      allTasks.push({
-        runId,
-        timestamp: entry.timestamp,
-        original: entry.url,
-        cdxId: entry.cdx_id,
-        outputFolder,
-      });
-    }
+async function countPendingTasks(
+  db: DB,
+  domains: Map<string, string>,
+  skipErrors: string[],
+  skipErrorMessages: string[],
+): Promise<PendingTaskCounts> {
+  if (domains.size === 0) {
+    return { total: 0, byDomainId: new Map<string, number>() };
   }
 
-  if (args.dryRun) {
-    printRetryDryRunSummary(summary, args.verbose);
-  } else {
-    if (allTasks.length === 0) {
-      console.log('No incomplete entries found.');
-      return;
+  const { skipErrorParams, skipErrorExistsClause } = buildSkipErrorFilter(
+    skipErrors,
+    skipErrorMessages,
+  );
+
+  const domainIds = Array.from(domains.keys());
+  const domainPlaceholders = domainIds.map(() => '?').join(', ');
+  const countStmt = db.prepare(
+    `SELECT rvs.cdx_id AS cdx_id, count(*) AS n
+       FROM resource_version rv
+       JOIN resource_version_source rvs ON rvs.url = rv.url AND rvs.timestamp = rv.timestamp
+       WHERE rvs.cdx_id IN (${domainPlaceholders})
+         AND rv.successful_request_id IS NULL
+         ${skipErrorExistsClause}
+       GROUP BY rvs.cdx_id`,
+  );
+
+  const rows = countStmt.all(...domainIds, ...skipErrorParams) as Array<{
+    cdx_id: string;
+    n: number;
+  }>;
+
+  const byDomainId = new Map<string, number>();
+  for (const domainId of domainIds) byDomainId.set(domainId, 0);
+  let total = 0;
+  for (const row of rows) {
+    byDomainId.set(row.cdx_id, row.n);
+    total += row.n;
+  }
+
+  return { total, byDomainId };
+}
+
+function samplePendingEntries(
+  db: DB,
+  domains: Map<string, string>,
+  skipErrors: string[],
+  skipErrorMessages: string[],
+): Map<string, RetryEntry[]> {
+  const sampledByDomainId = new Map<string, RetryEntry[]>();
+  if (domains.size === 0) return sampledByDomainId;
+
+  const { skipErrorParams, skipErrorExistsClause } = buildSkipErrorFilter(
+    skipErrors,
+    skipErrorMessages,
+  );
+
+  const stmt = db.prepare(
+    `
+      SELECT rvs.url, rvs.timestamp, rvs.cdx_id
+        FROM resource_version rv
+        JOIN resource_version_source rvs ON rvs.url = rv.url AND rvs.timestamp = rv.timestamp
+        WHERE rvs.cdx_id = ?
+          AND rv.successful_request_id IS NULL
+          ${skipErrorExistsClause}
+        LIMIT ${RETRY_ENTRIES_PREVIEW_CAP}`,
+  );
+
+  for (const domainId of domains.keys()) {
+    const sampled = stmt.all(domainId, ...skipErrorParams) as RetryEntry[];
+    sampledByDomainId.set(domainId, sampled);
+  }
+
+  return sampledByDomainId;
+}
+
+function runDownloadPlan(
+  db: DB,
+  domains: Map<string, string>,
+  args: {
+    skipErrors: string[];
+    skipErrorMessages: string[];
+    verbose: boolean;
+  },
+  pendingTaskCounts: PendingTaskCounts,
+): void {
+  const sampledByDomain = args.verbose
+    ? samplePendingEntries(db, domains, args.skipErrors, args.skipErrorMessages)
+    : undefined;
+  const summary = Array.from(domains.entries()).map(([domainId, domain]) => ({
+    domain,
+    pendingCount: pendingTaskCounts.byDomainId.get(domainId)!,
+    ...(args.verbose ? { entriesCapped: sampledByDomain!.get(domainId)! } : {}),
+  }));
+  printDownloadPlanSummary(summary, args.verbose);
+}
+
+async function runRetryMode(
+  db: DB,
+  domains: Map<string, string>,
+  args: {
+    skipErrors: string[];
+    skipErrorMessages: string[];
+    dryRun: boolean;
+    verbose: boolean;
+    output: string;
+  },
+  pendingTaskCounts: PendingTaskCounts,
+  runId: string,
+  runDownloads: (tasks: DownloadTask[]) => Promise<void>,
+): Promise<void> {
+  const { skipErrorParams, skipErrorExistsClause } = buildSkipErrorFilter(
+    args.skipErrors,
+    args.skipErrorMessages,
+  );
+
+  const domainIds = Array.from(domains.keys());
+  const domainPlaceholders = domainIds.map(() => '?').join(', ');
+  const outputFolder = args.output;
+
+  let cursor: { cdx_id: string; url: string; timestamp: number } | undefined;
+
+  while (true) {
+    const cursorClause = cursor
+      ? 'AND (rvs.cdx_id, rvs.url, rvs.timestamp) > (?, ?, ?)'
+      : '';
+    const pendingEntriesPage = db
+      .prepare(
+        `
+        SELECT rvs.cdx_id, rvs.url, rvs.timestamp
+          FROM resource_version rv
+          JOIN resource_version_source rvs ON rvs.url = rv.url AND rvs.timestamp = rv.timestamp
+          WHERE rvs.cdx_id IN (${domainPlaceholders})
+            AND rv.successful_request_id IS NULL
+            ${cursorClause}
+            ${skipErrorExistsClause}
+          ORDER BY rvs.cdx_id, rvs.url, rvs.timestamp
+          LIMIT ${RETRY_TASK_PAGE_SIZE}`,
+      )
+      .all(
+        ...domainIds,
+        ...(cursor ? [cursor.cdx_id, cursor.url, cursor.timestamp] : []),
+        ...skipErrorParams,
+      ) as RetryEntry[];
+
+    if (pendingEntriesPage.length === 0) {
+      break;
     }
-    await runDownloads(allTasks);
+
+    const tasks = pendingEntriesPage.map((entry) => ({
+      runId,
+      timestamp: entry.timestamp,
+      original: entry.url,
+      cdxId: entry.cdx_id,
+      outputFolder,
+    }));
+
+    await runDownloads(tasks);
+
+    const lastEntry = pendingEntriesPage[pendingEntriesPage.length - 1];
+    cursor = {
+      cdx_id: lastEntry.cdx_id,
+      url: lastEntry.url,
+      timestamp: lastEntry.timestamp,
+    };
   }
 }
 
 async function runSyncMode(
   db: DB,
-  domains: string[],
-  args: { dryRun: boolean; verbose: boolean; output: string },
+  domains: Map<string, string>,
+  args: {
+    dryRun: boolean;
+    verbose: boolean;
+    output: string;
+    cdxPageSize: number;
+  },
   runId: string,
 ): Promise<void> {
   const summary: Array<{
     domain: string;
-    cdxId: string;
-    allEntries: ParsedCdxEntry[];
-    newEntries: ParsedCdxEntry[];
+    newEntriesCapped: NewEntryPreview[];
+    newEntryCount: number;
   }> = [];
 
-  for (const domain of domains) {
+  for (const [cdxId, domain] of domains) {
     console.log(`\nDomain: ${domain}`);
 
-    const cdxId = getOrCreateCdxFile(db, domain, runId);
+    let domainEntryCount = 0;
+    const newEntriesCapped: NewEntryPreview[] = [];
+    let newEntryCount = 0;
 
-    let allEntries: ParsedCdxEntry[];
     try {
-      allEntries = await fetchCdxRows(domain);
+      for await (const pageEntries of fetchCdxRows(domain, args.cdxPageSize)) {
+        domainEntryCount += pageEntries.length;
+        if (args.dryRun) {
+          const newEntries = findNewEntries(db, domain, pageEntries);
+          newEntryCount += newEntries.length;
+          appendNewEntryPreviewsCapped(newEntriesCapped, newEntries);
+        } else {
+          const insertedEntries = insertCdxEntries(
+            db,
+            runId,
+            cdxId,
+            pageEntries,
+          );
+          newEntryCount += insertedEntries.length;
+          appendNewEntryPreviewsCapped(newEntriesCapped, insertedEntries);
+        }
+      }
     } catch (err) {
       console.error(`  Error fetching CDX: ${err}`);
       throw err;
     }
 
-    if (allEntries.length === 0) {
+    if (domainEntryCount === 0) {
       console.log('  No CDX entries found.');
       continue;
     }
 
-    const newEntries = findNewEntries(db, domain, allEntries);
-    summary.push({ domain, cdxId, allEntries, newEntries });
+    summary.push({ domain, newEntriesCapped, newEntryCount });
   }
 
-  printSyncDryRunSummary(
-    summary.map(({ domain, newEntries }) => ({ domain, newEntries })),
-    args.verbose,
-  );
+  printSyncDryRunSummary(summary, args.verbose);
 
   if (args.dryRun) return;
 
-  for (const { cdxId, allEntries } of summary) {
-    insertCdxEntries(db, runId, cdxId, allEntries);
-  }
-  const totalNew = summary.reduce((sum, s) => sum + s.newEntries.length, 0);
+  const totalNew = summary.reduce((sum, s) => sum + s.newEntryCount, 0);
   console.log(
     `\nSynced ${totalNew} new CDX entries across ${summary.length} domain(s).`,
   );
@@ -190,15 +376,15 @@ async function main() {
   const args = parseArgs();
   const db = openDatabase(args.db);
 
-  const domains = resolveDomains(db, args);
-  if (domains.length === 0) {
-    console.log('No domains found in database.');
-    return;
-  }
-
   const runId = uuidv4();
   insertRun(db, runId);
   insertRunArgs(db, runId, args);
+
+  const domains = resolveDomains(db, args, runId);
+  if (domains.size === 0) {
+    console.log('No domains found in database.');
+    return;
+  }
 
   const proxies = args.dryRun
     ? []
@@ -206,18 +392,9 @@ async function main() {
 
   const limit = pLimit(args.concurrency);
 
+  let succeeded = 0;
+  let failed = 0;
   const runDownloads = async (tasks: DownloadTask[]): Promise<void> => {
-    const bar = new cliProgress.SingleBar(
-      {
-        format:
-          'Progress |{bar}| {value}/{total} | succeeded: {succeeded} | failed: {failed}',
-      },
-      cliProgress.Presets.shades_classic,
-    );
-    bar.start(tasks.length, 0, { succeeded: 0, failed: 0 });
-    let succeeded = 0;
-    let failed = 0;
-
     await Promise.all(
       tasks.map((task) =>
         limit(async () => {
@@ -228,15 +405,41 @@ async function main() {
         }),
       ),
     );
-
-    bar.stop();
-    console.log(`Complete. succeeded: ${succeeded}, failed: ${failed}`);
   };
 
   if (!args.retryErrors) {
     await runSyncMode(db, domains, args, runId);
   }
-  await runRetryMode(db, domains, args, runId, runDownloads);
+
+  const pendingTaskCounts = await countPendingTasks(
+    db,
+    domains,
+    args.skipErrors,
+    args.skipErrorMessages,
+  );
+
+  if (pendingTaskCounts.total === 0) {
+    console.log('No pending entries found.');
+    return;
+  }
+
+  runDownloadPlan(db, domains, args, pendingTaskCounts);
+
+  if (args.dryRun) {
+    return;
+  }
+
+  const bar = new cliProgress.SingleBar(
+    {
+      format:
+        'Progress |{bar}| {value}/{total} | succeeded: {succeeded} | failed: {failed} | ETA: {eta_formatted}',
+    },
+    cliProgress.Presets.shades_classic,
+  );
+  bar.start(pendingTaskCounts.total, 0, { succeeded: 0, failed: 0 });
+  await runRetryMode(db, domains, args, pendingTaskCounts, runId, runDownloads);
+  bar.stop();
+  console.log(`Complete. succeeded: ${succeeded}, failed: ${failed}`);
 }
 
 main().catch((err) => {

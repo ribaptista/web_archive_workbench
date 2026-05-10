@@ -4,7 +4,6 @@ import type { Eta } from 'eta';
 interface SearchSummaryRow {
   id: number;
   created_at: string;
-  char_encoding: string;
   status: string;
   file_count: number;
   scanned_file_count: number;
@@ -24,8 +23,8 @@ interface DomainRow {
 const querySearches = (db: DB) =>
   db
     .prepare<[], SearchSummaryRow>(
-      `SELECT s.id, s.created_at, s.char_encoding, s.status, s.file_count, s.scanned_file_count, s.error_message,
-              COUNT(DISTINCT CASE WHEN sf.match_count > 0 THEN sf.context_digest END) AS match_file_count
+      `SELECT s.id, s.created_at, s.status, s.file_count, s.scanned_file_count, s.error_message,
+              COUNT(DISTINCT sf.context_digest) AS match_file_count
        FROM search s
        LEFT JOIN search_file sf ON sf.search_id = s.id
        GROUP BY s.id

@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Wayback Request Logger",
+  "version": "1.0",
+  "permissions": [
+    "webRequest",
+    "declarativeNetRequest",
+    "declarativeNetRequestFeedback",
+    "contextMenus",
+    "tabs"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  }
+}

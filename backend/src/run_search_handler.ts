@@ -23,7 +23,6 @@ export function ensureAdminTables(db: DB): void {
     CREATE TABLE IF NOT EXISTS search (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      char_encoding TEXT NOT NULL,
       status TEXT NOT NULL,
       file_count INTEGER NOT NULL,
       scanned_file_count INTEGER NOT NULL,
@@ -43,10 +42,21 @@ export function ensureAdminTables(db: DB): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       search_id INTEGER NOT NULL REFERENCES search(id) ON DELETE CASCADE,
       request_id TEXT NOT NULL REFERENCES request(id) ON DELETE CASCADE,
+      resource_version_url TEXT,
+      resource_version_timestamp INTEGER,
       match_count INTEGER NOT NULL DEFAULT 0,
       context_digest TEXT,
-      error_name TEXT,
-      error_message TEXT
+      is_duplicate_context_digest INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS search_file_error (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      search_id INTEGER NOT NULL REFERENCES search(id) ON DELETE CASCADE,
+      request_id TEXT NOT NULL REFERENCES request(id) ON DELETE CASCADE,
+      resource_version_url TEXT,
+      resource_version_timestamp INTEGER,
+      error_name TEXT NOT NULL,
+      error_message TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS search_match (
@@ -72,8 +82,9 @@ export function ensureAdminTables(db: DB): void {
     CREATE TABLE IF NOT EXISTS reaction (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       reaction_type_id INTEGER NOT NULL REFERENCES reaction_type(id) ON DELETE CASCADE,
-      body_digest TEXT NOT NULL,
-      UNIQUE(reaction_type_id, body_digest)
+      resource_version_url TEXT NOT NULL,
+      resource_version_timestamp INTEGER NOT NULL,
+      UNIQUE(reaction_type_id, resource_version_url, resource_version_timestamp)
     );
 
     -- searches_handler: LEFT JOIN search_file sf ON sf.search_id = s.id
@@ -84,23 +95,32 @@ export function ensureAdminTables(db: DB): void {
 
     -- searches_handler: SELECT ... FROM search_domain sd WHERE sd.search_id = ? ORDER BY sd.id
     CREATE INDEX IF NOT EXISTS idx_search_domain_search_id ON search_domain(search_id);
+
+    -- search_results_handler: JOIN/filter on search_match
+    CREATE INDEX IF NOT EXISTS idx_search_match_file_condition ON search_match(search_file_id, search_condition_id);
+
+    -- search_results_handler: JOIN reaction on url+timestamp + filter/count by reaction_type_id
+    CREATE INDEX IF NOT EXISTS idx_reaction_url_timestamp_type ON reaction(resource_version_url, resource_version_timestamp, reaction_type_id);
+
+    -- reactions_view_handler: JOIN request on body_digest, then lookup resource_version_source
+    CREATE INDEX IF NOT EXISTS idx_request_body_digest_resource_version ON request(body_digest, resource_version_url, resource_version_timestamp);
+
+    -- run_search_handler/search_scan: count + paginate HTML candidates
+    CREATE INDEX IF NOT EXISTS idx_request_html_candidates ON request(is_successful, location, mimetype, resource_version_url, resource_version_timestamp)
+      WHERE is_successful = 1 AND location IS NULL AND mimetype = 'text/html';
   `);
 
   db.prepare(
-    `INSERT OR IGNORE INTO reaction_type (id, label, emoji) VALUES (1, 'Like', 'like'), (2, 'Review later', 'calendar-1')`,
+    `INSERT OR IGNORE INTO reaction_type (id, label, emoji) VALUES (1, 'Like', 'Heart'), (2, 'Review later', 'Calendar')`,
   ).run();
 }
 
-function insertSearchRow(
-  db: DB,
-  charEncoding: string,
-  fileCount: number,
-): number {
+function insertSearchRow(db: DB, fileCount: number): number {
   const result = db
     .prepare<
-      [string, number]
-    >(`INSERT INTO search (char_encoding, status, file_count, scanned_file_count) VALUES (?, 'pending', ?, 0)`)
-    .run(charEncoding, fileCount);
+      [number]
+    >(`INSERT INTO search (status, file_count, scanned_file_count) VALUES ('pending', ?, 0)`)
+    .run(fileCount);
   return result.lastInsertRowid as number;
 }
 
@@ -180,7 +200,6 @@ function insertSearchConditions(
 
 export async function runSearch(
   conditionInputs: SearchConditionInput[],
-  charEncoding: string,
   opts: RunSearchOptions,
 ): Promise<number> {
   const {
@@ -197,25 +216,26 @@ export async function runSearch(
   const domainClause =
     cdxFileIds.length > 0
       ? `AND EXISTS (
-        SELECT 1 FROM resource_version_source rvs
-        WHERE rvs.url = rv.url AND rvs.timestamp = rv.timestamp
-        AND rvs.cdx_id IN (${cdxFileIds.map(() => '?').join(', ')})
+        SELECT 1
+        FROM resource_version_source rvs
+        WHERE r.resource_version_url = rvs.url
+          AND r.resource_version_timestamp = rvs.timestamp
+          AND rvs.cdx_id IN (${cdxFileIds.map(() => '?').join(', ')})
       )`
       : '';
 
   const countStmt = db.prepare<string[], { count: number }>(`
     SELECT COUNT(*) as count
-    FROM resource_version rv
-    JOIN request r ON r.id = rv.successful_request_id
-    WHERE rv.successful_request_id IS NOT NULL
-      AND r.mimetype = 'text/html'
+    FROM request r 
+    WHERE r.mimetype = 'text/html'
       AND r.location IS NULL
+      AND r.is_successful = 1
     ${domainClause}
   `);
   const countRow = countStmt.get(...cdxFileIds);
   const total = countRow?.count ?? 0;
 
-  const searchId = insertSearchRow(db, charEncoding, total);
+  const searchId = insertSearchRow(db, total);
   insertSearchDomains(db, searchId, [...cdxIdToDomain.keys()]);
   const conditions = insertSearchConditions(
     db,
@@ -233,7 +253,6 @@ export async function runSearch(
     dbPath: db.name,
     searchId,
     baseFolder,
-    charEncoding,
     maxWorkers,
     cdxFileIds,
     cdxIdToDomain: [...cdxIdToDomain.entries()],

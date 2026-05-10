@@ -5,6 +5,8 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
+import { ErrorMessage } from "@/components/ui/error-message";
 
 interface DomainStats {
   id: string;
@@ -29,10 +31,11 @@ export default function DomainsPage() {
       .catch((e) => setError(e.message));
   }, []);
 
-  if (error) return <p className="p-8 text-destructive">{error}</p>;
+  if (error) return <ErrorMessage message={error} />;
+  if (domains === null) return <Spinner />;
 
   return (
-    <div className="container max-w-4xl py-8 mx-auto px-4">
+    <div className="container max-w-5xl py-8 mx-auto px-4">
       <h1 className="text-2xl font-bold mb-6">Domains</h1>
 
       {domains && domains.length === 0 && (
@@ -50,7 +53,14 @@ export default function DomainsPage() {
                 <Badge variant="secondary">{d.resources} resources</Badge>
                 <Badge variant="default">{d.downloaded} downloaded</Badge>
                 {d.errored > 0 && (
-                  <Badge variant="destructive">{d.errored} errored</Badge>
+                  <Badge variant="destructive" className="cursor-pointer p-0">
+                    <a
+                      href={`/domain_errors?domain=${encodeURIComponent(d.domain)}`}
+                      className="px-2.5 py-0.5 block"
+                    >
+                      {d.errored} errored
+                    </a>
+                  </Badge>
                 )}
                 {d.pending > 0 && (
                   <Badge variant="outline">{d.pending} pending</Badge>

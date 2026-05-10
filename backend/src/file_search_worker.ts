@@ -4,32 +4,29 @@ import {
   type SearchCondition,
   type FileMatches,
 } from './file_search';
+import { toWorkerError, type WorkerError } from './worker_utils';
 
 export interface WorkerRequest {
   filePath: string;
   conditions: SearchCondition[];
-  charEncoding: string;
 }
 
-export type WorkerResponse =
-  | FileMatches
-  | { errorName: string; errorMessage: string };
+export type WorkerSuccess = FileMatches & { result: 'success' };
+
+export type WorkerResponse = WorkerSuccess | WorkerError;
+
+export type { WorkerError };
 
 if (!parentPort) throw new Error('Must be run as a Worker');
 
 parentPort.on('message', (req: WorkerRequest) => {
   try {
-    const result = getFileMatches(
-      req.filePath,
-      req.conditions,
-      req.charEncoding as BufferEncoding,
-    );
-    parentPort!.postMessage(result satisfies WorkerResponse);
-  } catch (err) {
-    const e = err as Error;
+    const result = getFileMatches(req.filePath, req.conditions);
     parentPort!.postMessage({
-      errorName: e.name,
-      errorMessage: e.message,
+      result: 'success',
+      ...result,
     } satisfies WorkerResponse);
+  } catch (err) {
+    parentPort!.postMessage(toWorkerError(err) satisfies WorkerResponse);
   }
 });

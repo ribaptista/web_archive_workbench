@@ -5,6 +5,8 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
+import { ErrorMessage } from "@/components/ui/error-message";
 
 interface RunArg {
   arg_name: string;
@@ -50,10 +52,11 @@ export default function RunsPage() {
       .catch((e) => setError(e.message));
   }, []);
 
-  if (error) return <p className="p-8 text-destructive">{error}</p>;
+  if (error) return <ErrorMessage message={error} />;
+  if (runs === null) return <Spinner />;
 
   return (
-    <div className="container max-w-4xl py-8 mx-auto px-4">
+    <div className="container max-w-5xl py-8 mx-auto px-4">
       <h1 className="text-2xl font-bold mb-6">Runs</h1>
 
       {runs && runs.length === 0 && (

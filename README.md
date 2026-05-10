@@ -24,7 +24,6 @@ Users are responsible for ensuring their use of this tool and any retrieved data
 
 Not affiliated with or endorsed by the Internet Archive.
 
-
 ## Downloading websites
 
 Start a bulk download by passing a list of domains:
@@ -116,6 +115,7 @@ This produces a list of file paths, one per line, saved to `urls.txt`.
 > **Note:** `grep` matches one line at a time. If the desired string is split across multiple lines in the HTML source (e.g. a tag attribute wraps onto the next line), `grep` will not find it. In that case, use a tool that can match across lines, or pre-process the files to join lines before searching.
 
 > **Note:** When dealing with old webpages that may not be valid UTF-8, prefix the command with `LC_ALL=C` to prevent `grep` from failing on non-UTF-8 bytes. This is only safe when the search term consists of simple ASCII characters (`[a-zA-Z0-9]` and basic special characters):
+>
 > ```sh
 > LC_ALL=C find -L ./wayback/<domain> \
 >   -path ./wayback/<domain>/assets -prune -o \
@@ -125,6 +125,7 @@ This produces a list of file paths, one per line, saved to `urls.txt`.
 > ```
 >
 > If you pipe the result into a second `grep`, `LC_ALL=C` must be set for that invocation too — the inline assignment only applies to the command it prefixes, not to subsequent commands in the pipeline. The simplest fix is to export it first:
+>
 > ```sh
 > export LC_ALL=C
 > find -L ./wayback/<domain> \
@@ -146,11 +147,13 @@ cat urls.txt | npx ts-node src/filter-paths.ts --include "search term" --exclude
 ```
 
 Options:
+
 - `--include` / `-i`: a file is kept if at least one line contains this term
 - `--exclude` / `-e`: lines that also contain this term are ignored
 - `--charset` / `-c`: character set to read files with (required)
 
 > **Note:** When working with old webpages, files may not be valid UTF-8. In that case, use `--charset latin1` to avoid decoding errors. This is only safe when the search term consists of simple ASCII characters (`[a-zA-Z0-9]` and basic special characters), as `toLowerCase()` matching for non-ASCII characters is unreliable under `latin1`:
+>
 > ```sh
 > cat urls.txt | npx ts-node src/filter-paths.ts --charset latin1 --include "search term" --exclude "unwanted term" > filtered.txt
 > ```
@@ -186,16 +189,19 @@ cat urls.txt | npx ts-node src/grep-context.ts <search_pattern> > unique_context
 Given a filepath list (e.g. `unique_contexts.txt`), use `dedup-html` to generate an HTML file with `file://` links to each file. The script also deduplicates the list, keeping only files with unique content digests (based on the `.{43}` digest embedded in their filenames).
 
 Output one filepath per line (default):
+
 ```sh
 cat unique_contexts.txt | npx ts-node src/dedup-html.ts > selected.txt
 ```
 
 Output an HTML file with clickable links:
+
 ```sh
 cat unique_contexts.txt | npx ts-node src/dedup-html.ts --html > index.html
 ```
 
 Sort the deduplicated list lexicographically before output (works with or without `--html`):
+
 ```sh
 cat unique_contexts.txt | npx ts-node src/dedup-html.ts --sort > selected.txt
 cat unique_contexts.txt | npx ts-node src/dedup-html.ts --sort --html > index.html
@@ -219,6 +225,7 @@ npx ts-node src/server.ts \
 Then open [http://localhost:3000](http://localhost:3000) in your browser.
 
 Options:
+
 - `--file-list` / `-f`: path to the file list (required)
 - `--db` / `-d`: path to the SQLite database (required)
 - `--locale` / `-l`: character set used when reading files, e.g. `utf8` or `latin1` (required)
@@ -254,106 +261,104 @@ npx ts-node src/mhtml-downloader.ts selected.txt ../wayback/wayback.db ./mhtml -
 - Press `Ctrl+C` to stop gracefully — in-flight downloads will finish before the process exits
 - A summary of succeeded and failed downloads is printed at the end
 
-
 ## Known issues
 
 X When replaying urls that originally returned 3xx + location: replay the redirect response instead of serving the page directly
-  X `../wayback/locost.eng.br/http%3A/%2F/%2Fwww.locost.eng.br/%2Fvisuh/%2Ffotos/%2F_20060524022356_120_633720_Zm_txgsZSYohXhattZJfGIHOh-WA6aOP_n9j8aGi6As.html`
-  X `http://localhost:3000/replay/20070830014542/http://www.valhalla.com.br:80/`
+X `../wayback/locost.eng.br/http%3A/%2F/%2Fwww.locost.eng.br/%2Fvisuh/%2Ffotos/%2F_20060524022356_120_633720_Zm_txgsZSYohXhattZJfGIHOh-WA6aOP_n9j8aGi6As.html`
+X `http://localhost:3000/replay/20070830014542/http://www.valhalla.com.br:80/`
 X Clicking on a wayback url in url list triggers extension rewrite
 X Investigate why this page doesn't set the background image and why other requests fail
-  X `http://localhost:3000/replay/20200806182043/http://www.valhalla.com.br/website/annihilator-for-the-demented/`
-  X try again after refreshing index (see missing url below)
-* 20060911052119	http://www.novometal.com:80/thebandsarena/topbandasin.php?ilink=DewScented/DewScented.php&ibanda=Dew+Scented
-* 847476 - 20081028225352	http://www.hellionrecords.com:80/
+X `http://localhost:3000/replay/20200806182043/http://www.valhalla.com.br/website/annihilator-for-the-demented/`
+X try again after refreshing index (see missing url below)
+
+- 20060911052119 http://www.novometal.com:80/thebandsarena/topbandasin.php?ilink=DewScented/DewScented.php&ibanda=Dew+Scented
+- 847476 - 20081028225352 http://www.hellionrecords.com:80/
   redirets to another url -> 404
   instead, show 200 versions of 847476
 
 ## TODO
 
-* pagination in cdx fetch
-* download warc/revisit (missing required cdx entry fields)?
-* review indexes
-* show similar path/relaxed domain
+X pagination in cdx fetch
+X progress bar
+
+- download warc/revisit (missing required cdx entry fields)?
+- review indexes
+- show similar path/relaxed domain
   - replay
   - resource list
-* non-ascii chars in url
+- non-ascii chars in url
   http://brasilmusicpress.com:80/clientes/sagitta/fotos-alta/DivulgaÐ·Ð³o%201.jpg
   http://brasilmusicpress.com:80/clientes/sagitta/fotos-alta/DivulgaÐ·Ð³o%201_thumb.jpg
-* report outdated query result (more files arrived)
+- report outdated query result (more files arrived)
   - refresh the search?
   - order by download time?
-* stop/slow down on 429/503?
-- include counts besides domain/condition/reaction
-* internal server error style
-- link reaction to resource_version
-  to avoid reaction list show a different version
-  but show in search results if a different version of that resource with same digest was liked?
-- counts per domain (run) -> double counting because no request -> domain direct relationship?
-- clean up errors on success/latest error
-- error list page
+- stop/slow down on 429/503?
 
-* Download additional domains
-  * from "press" page
-  * .com domain of a news website (roadiecrew.com?)
-* retry failed downloads (XII.jpg)
-* Refresh cdx index
+* counts per domain (run) -> double counting because no request -> domain direct relationship?
+* clean up errors on success/latest error
+* retry pirilampus+borderline+(all others?)
+* delete roadcrew.com
+* delete search with 8K results - app becomes unresponsive (busy)
+* start search - few seconds delay
+* text-muted-foreground for counts?
+* Reactions page - slow
+  - add loading
+  - select all/none
+* follow foreign domains
+* AND (borderline + sorocaba)
+* date filter
+* encoding
+  - support xml mimetype + encoding declaration
+* extension
+* on delete cascade -> messes up counts
+
+- partial cdx (date range)
+
+- not in cdx json: https://web.archive.org/web/20260510023510im_/https://www.metalrevolution.net/blog/wp-content/uploads/2017/10/Pastore-album-2017.jpg
+
+- Download additional domains
+  - from "press" page
+  - .com domain of a news website (roadiecrew.com?)
+- retry failed downloads (XII.jpg)
+- Refresh cdx index
   X not found in db: `http://www.valhalla.com.br/website/wp-content/plugins/simple-responsive-slider/assets/css/responsiveslides.css?ver=4.7.18`
-  * run for all domains
-X domain allow list:
-  X google fonts
-  X cdn (jquery?)
-X show similar results
-* show 404s/errors in extension console
-X sync
-* skip rows with unexpected field values
-* clean up errors from db
-* sanity check (db <-> filesystem)
-* recreate db with FK
-* detect indexes to be created (lookup for sync)
-* detect url resolving to multiple cdx entries?
+  - run for all domains
+    X domain allow list:
+    X google fonts
+    X cdn (jquery?)
+    X show similar results
+- show 404s/errors in extension console
+  X sync
+- clean up errors from db
+- sanity check (db <-> filesystem)
+- detect indexes to be created (lookup for sync)
 
-* multiple successful requests for a cdx_entry? prevent
+- multiple successful requests for a cdx_entry? prevent
   - handle concurrent download runs for same domain (race creating symlinks + setting successful_terminal_request_id)
-X multithread search
-X id -> uuid -> insert only after filesystem operations complete
-X rockbrigade -> slow -> change queries to use fields current=true, is_successful_terminal
-* paginate cdx? microsoft.com
-* paginate pending downloads
-* Scanning directory: /Users/ricardo/wayback/carcasse.com/http%3A/%2F/%2Fwww.bloddy_kisses.blogger.com.br
-  Scanning directory: /Users/ricardo/wayback/carcasse.com/http%3A/%2F/%2Fwww.bloodmovies.com
-  Scanning directory: /Users/ricardo/wayback/carcasse.com/http%3A/%2F/%2Fwww.blueblood.net
-  Scanning directory: /Users/ricardo/wayback/carcasse.com/http%3A/%2F/%2Fwww.bmezine.com
-  Scanning directory: /Users/ricardo/wayback/carcasse.com/http%3A/%2F/%2Fwww.bokadoinferno.hpg.ig.com.br
-  Scanning directory: /Users/ricardo/wayback/carcasse.com/http%3A/%2F/%2Fwww.bokadoinferno.hpg.ig.com.br/%2Fromepeige
-  Scanning directory: /Users/ricardo/wayback/carcasse.com/http%3A/%2F/%2Fwww.bokadoinferno.hpg.ig.com.br/%2Fromepeige/%2Fhorrogot
-    X https://web.archive.org/web/20040107080701id_/http://links.carcasse.com:80/out.php?id=399 redirects to https://web.archive.org/web/20040107080701id_/http://darksep.cjb.net/
-    X shouldn't be an issue
-    * mention in readme that searching inside carcasse.com will include these domains
-X domain id instead of literal
-* pastore AND ricardo
-X domain combobox instead of text - in new search and rearch results
+    X multithread search
+    X id -> uuid -> insert only after filesystem operations complete
+    X rockbrigade -> slow -> change queries to use fields current=true, is_successful_terminal
+- paginate cdx? microsoft.com
+  X https://web.archive.org/web/20040107080701id_/http://links.carcasse.com:80/out.php?id=399 redirects to https://web.archive.org/web/20040107080701id_/http://darksep.cjb.net/
+  X shouldn't be an issue \* mention in readme that searching inside carcasse.com will include these domains
+  X domain id instead of literal
+- pastore AND ricardo
+  X domain combobox instead of text - in new search and rearch results
   X multiple buttons instead of combobox
-X filter conditions in search results
-X result order
-X duplicate results: http://localhost:5050/search_results?search_id=7
-* latin/utf8
-* option: regex/literal
-* compare two searches (subtract)
-
+  X filter conditions in search results
+  X result order
+  X duplicate results: http://localhost:5050/search_results?search_id=7
 
 TODO
-- request + 302 -> may redirect to page inside domain but not on cdx file
-  - what is displayed in the tree -> cdx entry or request?
-  - which is selected for search?
+
 - save mimetype in request table
-X remove old cdx_id from cdx_entry table
-X script to generate htmlparser stream from existing html files
+  X remove old cdx_id from cdx_entry table
+  X script to generate htmlparser stream from existing html files
   X ndjson:
-    {type:a, n:"attr name", v:"value"}
-    {type:t, v:"value in latin1"}
+  {type:a, n:"attr name", v:"value"}
+  {type:t, v:"value in latin1"}
 - change downloader to generate htmlparser stream for each downloaded html file
-~ support for scan strategies: htmlparser stream or plain text
+  ~ support for scan strategies: htmlparser stream or plain text
   - save strategy in search db row
   - common
     X filter only html mimetypes
@@ -366,56 +371,15 @@ X script to generate htmlparser stream from existing html files
     - match display in search results:
       - attribute matches (as pills)
       - text match
-      X highlight multiple occurrences inside snippet
+        X highlight multiple occurrences inside snippet
 - Set both context_digest and body_digest in reaction
-- identify more errors types (instead of generalizing to general)
-- page to list all reacted urls
-  - filters:
-    - reaction
-    - domain
-    - condition?
-- script to set field last_errored_request in cdx_entry
-- modify downloader to set last_errored_request
-- add select all/none to toggles/checkboxes
-- change reaction filter behavior in search result
-  - include "no reaction"
-- create derived search
-- add "junk" and "seen check" reactions
-- reaction manager (crud)
-- replace reaction buttons (emoji) with tags (pills)
-- create website tree browser
-  - start at domains
-    - one level per `/`
-  - create script to update cdx_entry to add parent_id
-  - change downloader to set parent_id
-  - tree browser controller
-  - show # duplicates, # successful versions, # errored versions, # redirect versions, # pending download versions
-- domain inspector
-  - list domains
-  - domain details
-    - stats
-      - # entries
-      - # successful
-      - # errors
-      - # pending download
-    - runs 
-      - list runs with detail:
-        - timestamp
-        - parameters: skip error code/message
-        - # cdx entries created
-        - # successful downloads
-        - # errors
-          - by type
-        - completed?
+
 * version (timestamp) selector overlay
-  * show error / 302 / ok / not downloaded / digest
+  - show error / 302 / ok / not downloaded / digest
 * https://www.metalrevolution.net/blog/2018/06/14/pastore-confira-lyric-video-da-musica-phoenix-rising/
   broken chars?
 
-
-
 - search scan sql optimization
-
 
 - error spliting `/`: http://www.laudany.com.br/erros/404.htm?404;http:
   http://localhost:5050/resources?path=http%3A%2F%2Fwww.laudany.com.br%2Ferros&level=1
@@ -423,11 +387,11 @@ X script to generate htmlparser stream from existing html files
 - access replay from resources
 - http://localhost:5050/list_versions?url=http%3A%2F%2Ferror.hostinger.eu%2F
   redirecting to external?
-X http://localhost:3000/replay/20181224103750/https://www.hostinger.com.br/free-eol?utm_source=fri&utm_medium=www&utm_campaign=free_eol
+  X http://localhost:3000/replay/20181224103750/https://www.hostinger.com.br/free-eol?utm_source=fri&utm_medium=www&utm_campaign=free_eol
   all pending?
 - http://localhost:5050/list_versions?url=http%3A%2F%2Flaudany.com.br%2Frobots.txt ->
-20170722110655
-redirect
-→ http://error.hostinger.eu/
-- http://localhost:3000/replay/20170923133637/http://error.hostinger.eu/ -> 
+  20170722110655
+  redirect
+  → http://error.hostinger.eu/
+- http://localhost:3000/replay/20170923133637/http://error.hostinger.eu/ ->
   redirects to live website -> not being rewritten?

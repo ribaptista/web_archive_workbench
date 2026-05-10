@@ -14,14 +14,16 @@ interface DomainRow {
 }
 
 interface ReactionViewFileRow {
-  body_digest: string;
+  resource_version_url: string;
+  resource_version_timestamp: number;
   request_id: string;
   original: string;
   timestamp: string;
 }
 
 interface MatchedConditionRow {
-  body_digest: string;
+  resource_version_url: string;
+  resource_version_timestamp: number;
   condition_id: number;
   regex: string;
   not_regex_nearby: string | null;
@@ -40,17 +42,13 @@ export function getReactionsViewData(
     >(`SELECT id, label, emoji FROM reaction_type ORDER BY id`)
     .all();
 
-  // Domains present in the reacted resources (same base query + rvs join)
   const domains = db
     .prepare<[number], DomainRow>(
       `SELECT DISTINCT cf.id, cf.domain
        FROM reaction rx
-       INNER JOIN request r
-         ON r.body_digest = rx.body_digest
-        AND r.is_successful = 1
        INNER JOIN resource_version_source rvs
-         ON rvs.url = r.resource_version_url
-        AND rvs.timestamp = r.resource_version_timestamp
+         ON rvs.url = rx.resource_version_url
+        AND rvs.timestamp = rx.resource_version_timestamp
        INNER JOIN cdx_file cf ON cf.id = rvs.cdx_id
        WHERE rx.reaction_type_id = ?
        ORDER BY cf.domain`,
@@ -63,78 +61,94 @@ export function getReactionsViewData(
     : '';
   const domainJoin = activeDomainIds
     ? `INNER JOIN resource_version_source rvs_filter
-         ON rvs_filter.url = r.resource_version_url
-        AND rvs_filter.timestamp = r.resource_version_timestamp`
+         ON rvs_filter.url = rx.resource_version_url
+        AND rvs_filter.timestamp = rx.resource_version_timestamp`
     : '';
   const domainParams: string[] = activeDomainIds ?? [];
 
   const totalFiles =
     db
       .prepare<unknown[], { count: number }>(
-        `SELECT COUNT(DISTINCT rx.body_digest) AS count
+        `SELECT COUNT(*) AS count
          FROM reaction rx
-         INNER JOIN request r
-           ON r.body_digest = rx.body_digest
-          AND r.is_successful = 1
          ${domainJoin}
          WHERE rx.reaction_type_id = ?
          ${domainWhere}`,
       )
-      .get(reactionTypeId, ...domainParams)?.count ?? 0;
+      .get(...domainParams, reactionTypeId)?.count ?? 0;
 
   const totalPages = Math.max(1, Math.ceil(totalFiles / PAGE_SIZE));
   const safePage = Math.min(Math.max(1, page), totalPages);
   const offset = (safePage - 1) * PAGE_SIZE;
 
-  // One representative request per body_digest, most recent first
   const files = db
     .prepare<unknown[], ReactionViewFileRow>(
-      `SELECT rx.body_digest,
+      `SELECT rx.resource_version_url,
+              rx.resource_version_timestamp,
               r.id AS request_id,
               r.resource_version_url AS original,
               CAST(r.resource_version_timestamp AS TEXT) AS timestamp
        FROM reaction rx
-       INNER JOIN request r
-         ON r.body_digest = rx.body_digest
+       LEFT JOIN request r
+         ON r.resource_version_url = rx.resource_version_url
+        AND r.resource_version_timestamp = rx.resource_version_timestamp
         AND r.is_successful = 1
        ${domainJoin}
        WHERE rx.reaction_type_id = ?
        ${domainWhere}
-       GROUP BY rx.body_digest
-       ORDER BY MAX(r.resource_version_timestamp) DESC
+       ORDER BY rx.resource_version_timestamp DESC
        LIMIT ? OFFSET ?`,
     )
-    .all(reactionTypeId, ...domainParams, PAGE_SIZE, offset);
+    .all(...domainParams, reactionTypeId, PAGE_SIZE, offset);
 
-  const bodyDigests = files.map((f) => f.body_digest).filter(Boolean);
+  const urlTimestampKeys = files.map(
+    (f) => `${f.resource_version_url}|${f.resource_version_timestamp}`,
+  );
+
   const activeReactions: string[] =
-    bodyDigests.length > 0
+    files.length > 0
       ? db
           .prepare<
             unknown[],
-            { reaction_type_id: number; body_digest: string }
+            {
+              reaction_type_id: number;
+              resource_version_url: string;
+              resource_version_timestamp: number;
+            }
           >(
-            `SELECT reaction_type_id, body_digest
+            `SELECT reaction_type_id, resource_version_url, resource_version_timestamp
              FROM reaction
-             WHERE body_digest IN (${bodyDigests.map(() => '?').join(',')})`,
+             WHERE (resource_version_url, resource_version_timestamp) IN (${files.map(() => '(?,?)').join(',')})`,
           )
-          .all(...bodyDigests)
-          .map((r) => `${r.body_digest}:${r.reaction_type_id}`)
+          .all(
+            ...files.flatMap((f) => [
+              f.resource_version_url,
+              f.resource_version_timestamp,
+            ]),
+          )
+          .map(
+            (r) =>
+              `${r.resource_version_url}|${r.resource_version_timestamp}:${r.reaction_type_id}`,
+          )
       : [];
 
-  // For each result on this page, find all search conditions that matched it
   const matchedConditionsRaw: MatchedConditionRow[] =
-    bodyDigests.length > 0
+    files.length > 0
       ? db
           .prepare<unknown[], MatchedConditionRow>(
-            `SELECT DISTINCT r.body_digest, sc.id AS condition_id, sc.regex, sc.not_regex_nearby
-             FROM request r
-             INNER JOIN search_file sf ON sf.request_id = r.id
+            `SELECT DISTINCT sf.resource_version_url, sf.resource_version_timestamp,
+                    sc.id AS condition_id, sc.regex, sc.not_regex_nearby
+             FROM search_file sf
              INNER JOIN search_match sm ON sm.search_file_id = sf.id
              INNER JOIN search_condition sc ON sc.id = sm.search_condition_id
-             WHERE r.body_digest IN (${bodyDigests.map(() => '?').join(',')})`,
+             WHERE (sf.resource_version_url, sf.resource_version_timestamp) IN (${files.map(() => '(?,?)').join(',')})`,
           )
-          .all(...bodyDigests)
+          .all(
+            ...files.flatMap((f) => [
+              f.resource_version_url,
+              f.resource_version_timestamp,
+            ]),
+          )
       : [];
 
   const matchedConditions: Record<
@@ -142,7 +156,8 @@ export function getReactionsViewData(
     { id: number; regex: string; not_regex_nearby: string | null }[]
   > = {};
   for (const row of matchedConditionsRaw) {
-    (matchedConditions[row.body_digest] ??= []).push({
+    const key = `${row.resource_version_url}|${row.resource_version_timestamp}`;
+    (matchedConditions[key] ??= []).push({
       id: row.condition_id,
       regex: row.regex,
       not_regex_nearby: row.not_regex_nearby,
@@ -151,6 +166,7 @@ export function getReactionsViewData(
 
   return {
     files,
+    urlTimestampKeys,
     totalFiles,
     totalPages,
     currentPage: safePage,

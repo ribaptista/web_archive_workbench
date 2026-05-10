@@ -17,7 +17,7 @@ export default function TopNav() {
 
   return (
     <nav className="border-b bg-background">
-      <div className="container max-w-4xl mx-auto px-4 flex items-center gap-1 h-12">
+      <div className="container max-w-5xl mx-auto px-4 flex items-center gap-1 h-12">
         {links.map(({ href, label }) => (
           <Link
             key={href}

@@ -4,7 +4,7 @@ import {
   htmlStreamToNdjson,
   htmlStreamExtract,
   readNdjsonStream,
-} from './html_ndjson';
+} from './html';
 
 // ---------------------------------------------------------------------------
 // Helpers
