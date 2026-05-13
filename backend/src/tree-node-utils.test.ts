@@ -1,87 +1,65 @@
 import { describe, it, expect } from 'vitest';
-import { getPathParts } from './tree-node-utils';
+import { getPathParts, normalizeUrl } from './tree-node-utils';
 
 describe('getPathParts', () => {
-  it('http with single path segment', () => {
-    expect(getPathParts('http://example.com/foo')).toEqual([
-      'http://example.com',
-      '/foo',
-    ]);
+  it('single path segment', () => {
+    expect(getPathParts('example.com/foo')).toEqual(['example.com', '/foo']);
   });
 
-  it('https with multiple path segments', () => {
-    expect(getPathParts('https://example.com/foo/bar/baz')).toEqual([
-      'https://example.com',
+  it('multiple path segments', () => {
+    expect(getPathParts('example.com/foo/bar/baz')).toEqual([
+      'example.com',
       '/foo',
       '/bar',
       '/baz',
     ]);
   });
 
-  it('empty path (no trailing slash)', () => {
-    expect(getPathParts('https://example.com')).toEqual(['https://example.com']);
+  it('no path', () => {
+    expect(getPathParts('example.com')).toEqual(['example.com']);
   });
 
   it('root path only', () => {
-    expect(getPathParts('https://example.com/')).toEqual([
-      'https://example.com',
-      '/',
-    ]);
+    expect(getPathParts('example.com/')).toEqual(['example.com', '/']);
   });
 
   it('query string on root path', () => {
-    expect(getPathParts('https://example.com/?q=1')).toEqual([
-      'https://example.com',
-      '/?q=1',
-    ]);
+    expect(getPathParts('example.com/?q=1')).toEqual(['example.com', '/?q=1']);
   });
 
   it('query string on deep path', () => {
-    expect(getPathParts('https://example.com/foo/bar?baz=1&x=2')).toEqual([
-      'https://example.com',
+    expect(getPathParts('example.com/foo/bar?baz=1&x=2')).toEqual([
+      'example.com',
       '/foo',
       '/bar?baz=1&x=2',
     ]);
   });
 
   it('query string with no path segments after base', () => {
-    expect(getPathParts('https://example.com?q=hello')).toEqual([
-      'https://example.com?q=hello',
+    expect(getPathParts('example.com?q=hello')).toEqual([
+      'example.com?q=hello',
     ]);
   });
 
-  it('domain with port', () => {
-    expect(getPathParts('http://example.com:8080/path/to')).toEqual([
-      'http://example.com:8080',
+  it('two path segments', () => {
+    expect(getPathParts('example.com/path/to')).toEqual([
+      'example.com',
       '/path',
       '/to',
     ]);
   });
 
-  it('domain with port and query string', () => {
-    expect(getPathParts('http://localhost:3000/api/v1?token=abc')).toEqual([
-      'http://localhost:3000',
+  it('localhost with path and query', () => {
+    expect(getPathParts('localhost/api/v1?token=abc')).toEqual([
+      'localhost',
       '/api',
       '/v1?token=abc',
     ]);
   });
 
-  it('http (not https)', () => {
-    expect(getPathParts('http://example.com/page')).toEqual([
-      'http://example.com',
-      '/page',
-    ]);
-  });
-
-  it('mailto scheme (no slashes in authority)', () => {
-    expect(getPathParts('mailto:user@example.com')).toEqual([
-      'mailto:user@example.com',
-    ]);
-  });
-
   it('path with trailing slash', () => {
-    expect(getPathParts('https://example.com/foo/bar/')).toEqual([
-      'https://example.com',
+    expect(getPathParts('example.com/foo/bar/')).toEqual([
+      'example.com',
       '/foo',
       '/bar',
       '/',
@@ -89,23 +67,93 @@ describe('getPathParts', () => {
   });
 
   it('path segment that is empty string between slashes', () => {
-    expect(getPathParts('https://example.com/foo//bar')).toEqual([
-      'https://example.com',
+    expect(getPathParts('example.com/foo//bar')).toEqual([
+      'example.com',
       '/foo',
       '/',
       '/bar',
     ]);
   });
 
-  it('throws on invalid URL', () => {
-    expect(() => getPathParts('not a url')).toThrow();
-  });
-
   it('multiple question marks — only first is the query delimiter', () => {
-    expect(getPathParts('https://example.com/foo/bar?a=1?b=2')).toEqual([
-      'https://example.com',
+    expect(getPathParts('example.com/foo/bar?a=1?b=2')).toEqual([
+      'example.com',
       '/foo',
       '/bar?a=1?b=2',
     ]);
+  });
+});
+
+describe('normalizeUrl', () => {
+  it('strips https scheme', () => {
+    expect(normalizeUrl('https://example.com/foo')).toBe('example.com/foo');
+  });
+
+  it('strips http scheme', () => {
+    expect(normalizeUrl('http://example.com/page')).toBe('example.com/page');
+  });
+
+  it('strips port', () => {
+    expect(normalizeUrl('http://example.com:8080/path/to')).toBe(
+      'example.com/path/to',
+    );
+  });
+
+  it('strips standard port 443', () => {
+    expect(normalizeUrl('https://example.com:443/foo')).toBe('example.com/foo');
+  });
+
+  it('removes trailing dot from host', () => {
+    expect(normalizeUrl('https://example.com./foo/bar')).toBe(
+      'example.com/foo/bar',
+    );
+  });
+
+  it('no path returns just host', () => {
+    expect(normalizeUrl('https://example.com')).toBe('example.com');
+  });
+
+  it('root slash only is treated as no path', () => {
+    expect(normalizeUrl('https://example.com/')).toBe('example.com');
+  });
+
+  it('keeps deep path and query string', () => {
+    expect(normalizeUrl('https://example.com/foo/bar?baz=1&x=2')).toBe(
+      'example.com/foo/bar?baz=1&x=2',
+    );
+  });
+
+  it('query on root results in root path preserved', () => {
+    expect(normalizeUrl('https://example.com?q=hello')).toBe(
+      'example.com/?q=hello',
+    );
+  });
+
+  it('strips port and removes trailing dot together', () => {
+    expect(normalizeUrl('http://example.com.:3000/api')).toBe(
+      'example.com/api',
+    );
+  });
+
+  it('strips www prefix', () => {
+    expect(normalizeUrl('https://www.example.com/foo')).toBe('example.com/foo');
+  });
+
+  it('strips www2 prefix', () => {
+    expect(normalizeUrl('https://www2.example.com/foo')).toBe(
+      'example.com/foo',
+    );
+  });
+
+  it('does not strip non-www subdomain', () => {
+    expect(normalizeUrl('https://blog.example.com/foo')).toBe(
+      'blog.example.com/foo',
+    );
+  });
+
+  it('localhost with port', () => {
+    expect(normalizeUrl('http://localhost:3000/api/v1?token=abc')).toBe(
+      'localhost/api/v1?token=abc',
+    );
   });
 });

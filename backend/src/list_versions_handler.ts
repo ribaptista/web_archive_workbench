@@ -19,7 +19,7 @@ export function getListVersionsData(
   cursor: number | null,
 ) {
   const versions = db
-    .prepare<[string, string, number, number], VersionRow>(
+    .prepare<[string, number, number], VersionRow>(
       `SELECT rv.timestamp,
               rv.successful_request_id,
               CASE
@@ -33,6 +33,7 @@ export function getListVersionsData(
               sr.location_original,
               sr.location_timestamp
        FROM resource_version rv
+       JOIN resource res ON res.url = rv.url
        LEFT JOIN request sr ON sr.id = rv.successful_request_id
        LEFT JOIN (
          SELECT r.resource_version_url,
@@ -45,16 +46,15 @@ export function getListVersionsData(
                 ) AS rn
          FROM request r
          JOIN request_errors re ON re.request_id = r.id
-         WHERE r.resource_version_url = ?
        ) le ON le.resource_version_url = rv.url
            AND le.resource_version_timestamp = rv.timestamp
            AND le.rn = 1
-       WHERE rv.url = ?
+       WHERE res.normalized_url = ?
          AND rv.timestamp > ?
        ORDER BY rv.timestamp
        LIMIT ?`,
     )
-    .all(url, url, cursor ?? 0, PAGE_SIZE);
+    .all(url, cursor ?? 0, PAGE_SIZE);
 
   const nextCursor =
     versions.length === PAGE_SIZE

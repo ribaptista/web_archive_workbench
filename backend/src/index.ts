@@ -1,4 +1,3 @@
-import path from 'path';
 import pLimit from 'p-limit';
 import { v4 as uuidv4 } from 'uuid';
 import cliProgress from 'cli-progress';
@@ -107,6 +106,7 @@ type RetryEntry = {
   url: string;
   timestamp: number;
   cdx_id: string;
+  normalized_domain: string;
 };
 
 type PendingTaskCounts = {
@@ -268,9 +268,10 @@ async function runRetryMode(
     const pendingEntriesPage = db
       .prepare(
         `
-        SELECT rvs.cdx_id, rvs.url, rvs.timestamp
+        SELECT rvs.cdx_id, rvs.url, rvs.timestamp, cf.normalized_domain
           FROM resource_version rv
           JOIN resource_version_source rvs ON rvs.url = rv.url AND rvs.timestamp = rv.timestamp
+          JOIN cdx_file cf ON cf.id = rvs.cdx_id
           WHERE rvs.cdx_id IN (${domainPlaceholders})
             AND rv.successful_request_id IS NULL
             ${cursorClause}
@@ -293,6 +294,7 @@ async function runRetryMode(
       timestamp: entry.timestamp,
       original: entry.url,
       cdxId: entry.cdx_id,
+      normalizedDomain: entry.normalized_domain,
       outputFolder,
     }));
 

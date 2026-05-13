@@ -15,9 +15,10 @@ export function getResourcesData(
   if (filterPath === null) {
     nodes = db
       .prepare<[string, number], TreeNodeRow>(
-        `SELECT tn.path, tn.level, CASE WHEN r.url IS NOT NULL THEN 1 ELSE 0 END AS is_leaf
+        `SELECT tn.path, tn.level,
+                CASE WHEN EXISTS (SELECT 1 FROM resource WHERE normalized_url = tn.path)
+                     THEN 1 ELSE 0 END AS is_leaf
          FROM tree_node tn
-         LEFT JOIN resource r ON r.url = tn.path
          WHERE tn.level = 0
            AND tn.path > ?
          ORDER BY tn.path
@@ -27,9 +28,10 @@ export function getResourcesData(
   } else {
     nodes = db
       .prepare<[number, string, string, number], TreeNodeRow>(
-        `SELECT tn.path, tn.level, CASE WHEN r.url IS NOT NULL THEN 1 ELSE 0 END AS is_leaf
+        `SELECT tn.path, tn.level,
+                CASE WHEN EXISTS (SELECT 1 FROM resource WHERE normalized_url = tn.path)
+                     THEN 1 ELSE 0 END AS is_leaf
          FROM tree_node tn
-         LEFT JOIN resource r ON r.url = tn.path
          WHERE tn.level = ?
            AND tn.path LIKE ? ESCAPE '\\'
            AND tn.path > ?

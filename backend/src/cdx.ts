@@ -1,7 +1,11 @@
 import { fetch } from 'undici';
 import { v4 as uuidv4 } from 'uuid';
 import type { DB } from './db';
-import { insertTreeNodePaths } from './tree-node-utils';
+import {
+  insertTreeNodePaths,
+  normalizeUrl,
+  normalizeDomain,
+} from './tree-node-utils';
 
 export function assertUrlRoundTrip(
   original: string,
@@ -141,7 +145,7 @@ export function insertCdxEntries(
     )
   `);
   const insertResource = db.prepare(
-    `INSERT OR IGNORE INTO resource (url) VALUES (?)`,
+    `INSERT OR IGNORE INTO resource (url, normalized_url) VALUES (?, ?)`,
   );
   const insertResourceVersion = db.prepare(
     `INSERT OR IGNORE INTO resource_version (url, timestamp) VALUES (?, ?)`,
@@ -176,8 +180,9 @@ export function insertCdxEntries(
     if (entry.isValid) {
       const original = entry.original!;
       const timestamp = entry.timestamp!;
-      insertTreeNodePaths(db, [original]);
-      insertResource.run(original);
+      const normalizedOriginal = normalizeUrl(original);
+      insertTreeNodePaths(db, [normalizedOriginal]);
+      insertResource.run(original, normalizedOriginal);
       insertResourceVersion.run(original, timestamp);
       const rvsr = insertResourceVersionSource.run(original, timestamp, cdxId);
       if (rvsr.changes > 0) incrementCdxTotal.run(cdxId);
@@ -201,8 +206,8 @@ export function getOrCreateCdxFile(
 ): string {
   const cdxId = uuidv4();
   db.prepare(
-    'INSERT OR IGNORE INTO cdx_file (id, run_id, domain) VALUES (?, ?, ?)',
-  ).run(cdxId, runId, domain);
+    'INSERT OR IGNORE INTO cdx_file (id, run_id, domain, normalized_domain) VALUES (?, ?, ?, ?)',
+  ).run(cdxId, runId, domain, normalizeDomain(domain));
   return db
     .prepare<
       [string],

@@ -8,7 +8,7 @@ import type { DB } from './db';
 import { SQL_NULL_SAFE_EQ } from './db';
 import { pickProxy, type ProxyEntry } from './proxy';
 import { htmlExtractToFiles } from './html';
-import { insertTreeNodePaths } from './tree-node-utils';
+import { insertTreeNodePaths, normalizeUrl } from './tree-node-utils';
 import { nestedIdPath } from './id-path';
 import { detectEncoding } from './encoding';
 
@@ -113,6 +113,7 @@ export interface DownloadTask {
   timestamp: number | null;
   original: string;
   cdxId: string;
+  normalizedDomain: string;
   outputFolder: string;
 }
 
@@ -134,13 +135,15 @@ export async function downloadEntry(
       status_code, body_digest, inferred_gzip,
       duration_ms, proxy_address, is_successful,
       mimetype, location, location_original, location_timestamp,
-      encoding, encoding_source, chardet_confidence
+      encoding, encoding_source, chardet_confidence,
+      is_foreign_redirect, redirect_domain, redirect_normalized_domain
     )
     SELECT ?, ?,
            ?, ?,
            ?, ?, ?,
            ?, ?, ?,
            ?, ?, ?, ?,
+           ?, ?, ?,
            ?, ?, ?
     WHERE NOT EXISTS (
       SELECT 1 FROM resource_version
@@ -156,7 +159,7 @@ export async function downloadEntry(
     VALUES (?, ?, ?)
   `);
   const insertResource = db.prepare(`
-    INSERT OR IGNORE INTO resource (url) VALUES (?)
+    INSERT OR IGNORE INTO resource (url, normalized_url) VALUES (?, ?)
   `);
   const insertResourceVersion = db.prepare(`
     INSERT OR IGNORE INTO resource_version (url, timestamp) VALUES (?, ?)
@@ -300,9 +303,6 @@ export async function downloadEntry(
     let fetchDurationMs: number | null = null;
     let fetchStart: number | null = null;
     try {
-      if (Math.random() < 0) {
-        throw new Error(`Simulated random fetch error for testing`);
-      }
       try {
         response = await proxy.limiter.schedule(() => {
           fetchStart = Date.now();
@@ -436,7 +436,7 @@ export async function downloadEntry(
 
     if (isRedirect(statusCode) && parsedRedirectTarget === null) {
       errors.push({
-        code: 'redirect_target_not_in_archive',
+        code: 'unsupported_redirect_target',
         message: `Redirect target is not a Wayback Machine archive URL: ${resolvedLocation}`,
       });
     }
@@ -455,13 +455,35 @@ export async function downloadEntry(
     const responseMimetype = contentTypeStr
       ? contentTypeStr.split(';')[0].trim()
       : null;
-    const isSuccessful = errors.length === 0;
 
     // Detect encoding for HTML responses
     const detectedEncoding =
       responseMimetype === 'text/html' && finalBody
         ? detectEncoding(responseHeaders, finalBody)
         : null;
+
+    // Compute redirect domain metadata
+    let isForeignRedirect: boolean | null = null;
+    let redirectDomain: string | null = null;
+    let redirectNormalizedDomain: string | null = null;
+    let redirectNormalizedUrl: string | null = null;
+    if (parsedRedirectTarget !== null) {
+      try {
+        redirectNormalizedUrl = normalizeUrl(parsedRedirectTarget.original);
+        redirectDomain = new URL(parsedRedirectTarget.original).hostname;
+        redirectNormalizedDomain = redirectNormalizedUrl.split('/')[0];
+        isForeignRedirect =
+          redirectNormalizedDomain !== task.normalizedDomain &&
+          !redirectNormalizedDomain.endsWith('.' + task.normalizedDomain);
+      } catch {
+        errors.push({
+          code: 'redirect_domain_parse_error',
+          message: `Failed to parse redirect target URL: ${parsedRedirectTarget.original}`,
+        });
+      }
+    }
+
+    const isSuccessful = errors.length === 0;
 
     // Insert request row, errors, and headers in a single transaction
     let skipped = false;
@@ -486,6 +508,9 @@ export async function downloadEntry(
         detectedEncoding?.encoding ?? null,
         detectedEncoding?.source ?? null,
         detectedEncoding?.chardetConfidence ?? null,
+        isForeignRedirect !== null ? (isForeignRedirect ? 1 : 0) : null,
+        redirectDomain,
+        redirectNormalizedDomain,
         urlOriginal,
         urlTimestamp,
       );
@@ -506,9 +531,12 @@ export async function downloadEntry(
         }
       }
 
-      if (isRedirect(statusCode) && isSuccessful) {
-        insertTreeNodePaths(db, [parsedRedirectTarget!.original]);
-        insertResource.run(parsedRedirectTarget!.original);
+      if (isRedirect(statusCode) && isSuccessful && !isForeignRedirect) {
+        insertTreeNodePaths(db, [redirectNormalizedUrl!]);
+        insertResource.run(
+          parsedRedirectTarget!.original,
+          redirectNormalizedUrl!,
+        );
         const r = insertResourceVersion.run(
           // non-null inferred from if condition
           parsedRedirectTarget!.original,
@@ -597,7 +625,8 @@ export async function downloadEntry(
     if (
       isRedirect(statusCode) &&
       parsedRedirectTarget !== null &&
-      isSuccessful
+      isSuccessful &&
+      !isForeignRedirect
     ) {
       if (!redirectTargetIsNew) {
         return true; // redirect target already exists, work is done

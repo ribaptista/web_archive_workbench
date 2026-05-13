@@ -309,12 +309,14 @@ X progress bar
 * date filter
 * encoding
   - support xml mimetype + encoding declaration
-* extension
 * on delete cascade -> messes up counts
 
 - partial cdx (date range)
 
 - not in cdx json: https://web.archive.org/web/20260510023510im_/https://www.metalrevolution.net/blog/wp-content/uploads/2017/10/Pastore-album-2017.jpg
+  https://web.archive.org/web/20240518161219im_/https://roadiecrew.com/wp-content/uploads/3.jpg
+  pictures: https://web.archive.org/web/20240518161219/https://roadiecrew.com/pastore-santo-andre-sp-16-03-2018/
+- page width - reactions
 
 - Download additional domains
   - from "press" page

@@ -31,6 +31,7 @@ export function openDatabase(filePath: string): DB {
       id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL REFERENCES run(id),
       domain TEXT NOT NULL UNIQUE,
+      normalized_domain TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       total_count INTEGER NOT NULL DEFAULT 0,
       downloaded_count INTEGER NOT NULL DEFAULT 0,
@@ -68,7 +69,8 @@ export function openDatabase(filePath: string): DB {
     );
 
     CREATE TABLE IF NOT EXISTS resource (
-      url TEXT PRIMARY KEY REFERENCES tree_node(path) ON DELETE CASCADE
+      url TEXT PRIMARY KEY REFERENCES tree_node(path) ON DELETE CASCADE,
+      normalized_url TEXT NOT NULL DEFAULT ''
     );
 
     CREATE TABLE IF NOT EXISTS resource_version (
@@ -111,6 +113,9 @@ export function openDatabase(filePath: string): DB {
       encoding TEXT,
       encoding_source TEXT,
       chardet_confidence REAL,
+      is_foreign_redirect INTEGER,
+      redirect_domain TEXT,
+      redirect_normalized_domain TEXT,
 
       FOREIGN KEY (resource_version_url, resource_version_timestamp) REFERENCES resource_version(url, timestamp) ON DELETE CASCADE
     );
@@ -172,22 +177,13 @@ export function openDatabase(filePath: string): DB {
 
     CREATE INDEX IF NOT EXISTS idx_resource_version_source_cdx_id_url_timestamp 
       ON resource_version_source (cdx_id, url, timestamp);
-  `);
 
-  // Migrations for existing databases
-  const existingCols = db.prepare(`PRAGMA table_info(request)`).all() as {
-    name: string;
-  }[];
-  const colNames = new Set(existingCols.map((c) => c.name));
-  if (!colNames.has('encoding')) {
-    db.exec(`ALTER TABLE request ADD COLUMN encoding TEXT`);
-  }
-  if (!colNames.has('encoding_source')) {
-    db.exec(`ALTER TABLE request ADD COLUMN encoding_source TEXT`);
-  }
-  if (!colNames.has('chardet_confidence')) {
-    db.exec(`ALTER TABLE request ADD COLUMN chardet_confidence REAL`);
-  }
+    -- list_versions_handler and resources_handler: filter/check resource by normalized_url
+    CREATE INDEX IF NOT EXISTS idx_resource_normalized_url ON resource(normalized_url);
+
+    -- resources_handler filtered query: WHERE tn.level = ? AND tn.path LIKE ? AND tn.path > ?
+    CREATE INDEX IF NOT EXISTS idx_tree_node_level_path ON tree_node(level, path);
+  `);
 
   return db;
 }

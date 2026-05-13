@@ -5,6 +5,7 @@ import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { openDatabase } from './db';
 import { nestedIdPath } from './id-path';
+import { normalizeUrl } from './tree-node-utils';
 
 const PORT = 5051;
 
@@ -107,19 +108,18 @@ function main() {
     LIMIT 1
   `);
 
-  const stmtByPathAndDomain = db.prepare<[string, string, number], CdxRow>(`
+  const stmtByNormalizedUrl = db.prepare<[string, number], CdxRow>(`
     SELECT rv.timestamp, r.mimetype, r.body_digest, cf.domain, rv.url AS terminal_original,
            r.location_original, r.location_timestamp
-    FROM resource_version rv
+    FROM resource r2
+    JOIN resource_version rv ON rv.url = r2.url
     JOIN request r ON r.id = rv.successful_request_id
     JOIN resource_version_source rvs ON rvs.url = rv.url AND rvs.timestamp = rv.timestamp
     JOIN cdx_file cf ON cf.id = rvs.cdx_id
-    JOIN cdx_entry ce ON ce.original = rv.url AND ce.timestamp = rv.timestamp AND ce.cdx_id = rvs.cdx_id
-    WHERE ce.parsed_path_and_query = ?
-      AND cf.domain = ?
+    WHERE r2.normalized_url = ?
       AND r.body_digest IS NOT NULL
     ORDER BY ABS(rv.timestamp - ?)
-    LIMIT 1
+    LIMIT 2
   `);
 
   const stmtVersions = db.prepare<[string, string], VersionRow>(`
@@ -156,30 +156,39 @@ function main() {
     const primary = stmtByOriginal.get(original, reqTimestamp);
     if (primary) return primary;
 
-    let parsedUrl: URL;
+    let normalizedOriginal: string;
     try {
-      parsedUrl = new URL(original);
+      normalizedOriginal = normalizeUrl(original);
     } catch {
-      console.error(`[lookup] could not parse URL for fallback: ${original}`);
+      console.error(
+        `[lookup] could not normalize URL for fallback: ${original}`,
+      );
       return undefined;
     }
 
-    const pathAndQuery = parsedUrl.pathname + parsedUrl.search;
-    const hostParts = parsedUrl.hostname.split('.');
-
-    for (let start = 0; hostParts.length - start >= 2; start++) {
-      const domain = hostParts.slice(start).join('.');
-      const row = stmtByPathAndDomain.get(pathAndQuery, domain, reqTimestamp);
-      if (row) {
-        console.error(
-          `[lookup] fallback match: ${original} → original=${row.terminal_original}`,
+    const fallbackRows = stmtByNormalizedUrl.all(
+      normalizedOriginal,
+      reqTimestamp,
+    );
+    const row = fallbackRows[0];
+    if (row) {
+      if (
+        fallbackRows.length > 1 &&
+        Math.abs(fallbackRows[1].timestamp - reqTimestamp) ===
+          Math.abs(row.timestamp - reqTimestamp)
+      ) {
+        console.warn(
+          `[lookup] ambiguous fallback match for normalized_url=${normalizedOriginal}: candidates ${row.terminal_original}@${row.timestamp} and ${fallbackRows[1].terminal_original}@${fallbackRows[1].timestamp} are equidistant from ${reqTimestamp}`,
         );
-        return row;
       }
+      console.error(
+        `[lookup] fallback match: ${original} → original=${row.terminal_original}`,
+      );
+      return row;
     }
 
     console.error(
-      `[lookup] no fallback match for path_and_query=${pathAndQuery} (tried ${hostParts.length - 1} domain(s))`,
+      `[lookup] no fallback match for normalized_url=${normalizedOriginal}`,
     );
     return undefined;
   }

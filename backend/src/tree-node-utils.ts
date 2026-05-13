@@ -1,6 +1,22 @@
 import type { Database as DB } from 'better-sqlite3';
 
-const URL_REGEX = /^([a-zA-Z][a-zA-Z0-9+.-]*:(?:\/\/)?[^\/]+)(\/[^\/]*)*$/;
+const URL_REGEX = /^([^\/]+)(\/[^\/]*)*$/;
+
+export function normalizeHost(host: string): string {
+  return host.replace(/\.$/, '').replace(/^www[0-9]*\./, '');
+}
+
+export function normalizeDomain(domain: string): string {
+  return normalizeHost(domain);
+}
+
+export function normalizeUrl(url: string): string {
+  const parsed = new URL(url);
+  const host = normalizeHost(parsed.hostname);
+  const pathAndQuery = parsed.pathname + parsed.search;
+  if (pathAndQuery === '/') return host;
+  return host + pathAndQuery;
+}
 
 export function getPathParts(original: string): string[] {
   const matches = URL_REGEX.exec(original);
