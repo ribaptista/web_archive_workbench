@@ -156,6 +156,9 @@ export function insertCdxEntries(
   const incrementCdxTotal = db.prepare(
     `UPDATE cdx_file SET total_count = total_count + 1, pending_count = pending_count + 1 WHERE id = ?`,
   );
+  const incrementRunCdxCount = db.prepare(
+    `UPDATE run SET cdx_entry_count = cdx_entry_count + 1 WHERE id = ?`,
+  );
 
   const insertOne = db.transaction((entry: ParsedCdxEntry) => {
     const result = insertEntry.run(
@@ -177,6 +180,7 @@ export function insertCdxEntries(
       entry.isValid ? 1 : 0,
     );
     if (result.changes === 0) return false;
+    incrementRunCdxCount.run(runId);
     if (entry.isValid) {
       const original = entry.original!;
       const timestamp = entry.timestamp!;
@@ -223,6 +227,7 @@ export function getOrCreateCdxFile(
 export async function* fetchCdxRows(
   domain: string,
   cdxPageSize: number,
+  log: (msg: string) => void = console.log,
 ): AsyncGenerator<ParsedCdxEntry[], void, void> {
   const baseUrl = `http://web.archive.org/cdx/search/cdx?matchType=domain&output=json&showResumeKey=true&limit=${cdxPageSize}&url=${encodeURIComponent(domain)}`;
 
@@ -235,7 +240,7 @@ export async function* fetchCdxRows(
         ? baseUrl
         : `${baseUrl}&resumeKey=${encodeURIComponent(resumeKey)}`;
 
-    console.log(`Fetching CDX page ${page} from: ${url}`);
+    log(`Fetching CDX page ${page} from: ${url}`);
 
     let rows: unknown[];
     for (let attempt = 1; ; attempt++) {

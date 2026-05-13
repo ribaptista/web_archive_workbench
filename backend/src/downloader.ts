@@ -167,6 +167,26 @@ export async function downloadEntry(
   const insertResourceVersionSource = db.prepare(`
     INSERT OR IGNORE INTO resource_version_source (url, timestamp, cdx_id) VALUES (?, ?, ?)
   `);
+  const incrementRunStats = db.prepare(`
+    UPDATE run SET
+      request_total = request_total + 1,
+      request_successful = request_successful + ?,
+      request_errored = request_errored + ?
+    WHERE id = ?
+  `);
+  const upsertRunDomainStats = db.prepare(`
+    INSERT INTO run_domain_stats (run_id, cdx_id, requested, downloaded, errored)
+    VALUES (?, ?, 1, ?, ?)
+    ON CONFLICT (run_id, cdx_id) DO UPDATE SET
+      requested = requested + 1,
+      downloaded = downloaded + excluded.downloaded,
+      errored = errored + excluded.errored
+  `);
+  const upsertRunErrorTypeStats = db.prepare(`
+    INSERT INTO run_error_type_stats (run_id, cdx_id, error_name, error_code, count)
+    VALUES (?, ?, ?, ?, 1)
+    ON CONFLICT (run_id, cdx_id, error_name, error_code) DO UPDATE SET count = count + 1
+  `);
   const queryResourceVersionState = db.prepare<
     [string, number],
     {
@@ -332,6 +352,9 @@ export async function downloadEntry(
         null,
         null,
         null,
+        null,
+        null,
+        null,
         urlOriginal,
         urlTimestamp,
       );
@@ -342,6 +365,9 @@ export async function downloadEntry(
         message: errMessage,
       } = parseError(err);
       insertRequestError.run(errorID, errName, errCode, errMessage);
+      incrementRunStats.run(0, 1, runId);
+      upsertRunDomainStats.run(runId, task.cdxId, 0, 1);
+      upsertRunErrorTypeStats.run(runId, task.cdxId, errName ?? '', errCode);
       applyErroredResourceVersionResult(urlOriginal, urlTimestamp, errorID);
       return false;
     }
@@ -519,8 +545,17 @@ export async function downloadEntry(
         return;
       }
 
+      incrementRunStats.run(isSuccessful ? 1 : 0, isSuccessful ? 0 : 1, runId);
+      upsertRunDomainStats.run(
+        runId,
+        task.cdxId,
+        isSuccessful ? 1 : 0,
+        isSuccessful ? 0 : 1,
+      );
+
       for (const { name = null, code, message } of errors) {
         insertRequestError.run(requestId, name, code, message);
+        upsertRunErrorTypeStats.run(runId, task.cdxId, name ?? '', code);
       }
 
       for (const [name, value] of Object.entries(responseHeaders)) {

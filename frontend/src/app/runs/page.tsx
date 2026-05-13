@@ -19,6 +19,7 @@ interface DomainCount {
 }
 
 interface ErrorType {
+  domain: string;
   error_name: string | null;
   error_code: string;
   count: number;
@@ -131,24 +132,25 @@ export default function RunsPage() {
                       <span className="text-xs text-muted-foreground w-28 shrink-0">Errors</span>
                       <Badge variant="destructive">{run.errors_total}</Badge>
                     </div>
-                    {run.errors_by_domain.length > 0 && (
-                      <div className="flex flex-wrap gap-1 ml-[7.5rem] mb-1">
-                        {run.errors_by_domain.map((d) => (
-                          <Badge key={d.domain} variant="secondary" className="text-xs font-normal">
+                    {run.errors_by_domain.filter((d) => d.count > 0).map((d) => {
+                      const domainErrors = run.errors_by_type.filter((e) => e.domain === d.domain);
+                      return (
+                        <div key={d.domain} className="ml-[7.5rem] mb-2">
+                          <Badge variant="secondary" className="text-xs font-normal mb-1">
                             {d.domain}: {d.count}
                           </Badge>
-                        ))}
-                      </div>
-                    )}
-                    {run.errors_by_type.length > 0 && (
-                      <div className="flex flex-wrap gap-1 ml-[7.5rem]">
-                        {run.errors_by_type.map((e, i) => (
-                          <Badge key={i} variant="outline" className="font-mono text-xs font-normal">
-                            {e.error_name ? `${e.error_name} ` : ""}{e.error_code}: {e.count}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
+                          {domainErrors.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {domainErrors.map((e, i) => (
+                                <Badge key={i} variant="outline" className="font-mono text-xs font-normal">
+                                  {e.error_name ? `${e.error_name} ` : ""}{e.error_code}: {e.count}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 

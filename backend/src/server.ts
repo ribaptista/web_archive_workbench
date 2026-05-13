@@ -341,7 +341,6 @@ function main() {
   http
     .createServer((req, res) => {
       res.setHeader('Referrer-Policy', 'unsafe-url');
-      const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
 
       const replayMatch = req.url?.match(replayRouteRe);
       if (replayMatch) {

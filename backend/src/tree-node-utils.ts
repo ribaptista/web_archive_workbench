@@ -14,7 +14,6 @@ export function normalizeUrl(url: string): string {
   const parsed = new URL(url);
   const host = normalizeHost(parsed.hostname);
   const pathAndQuery = parsed.pathname + parsed.search;
-  if (pathAndQuery === '/') return host;
   return host + pathAndQuery;
 }
 

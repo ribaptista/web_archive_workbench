@@ -109,14 +109,6 @@ describe('normalizeUrl', () => {
     );
   });
 
-  it('no path returns just host', () => {
-    expect(normalizeUrl('https://example.com')).toBe('example.com');
-  });
-
-  it('root slash only is treated as no path', () => {
-    expect(normalizeUrl('https://example.com/')).toBe('example.com');
-  });
-
   it('keeps deep path and query string', () => {
     expect(normalizeUrl('https://example.com/foo/bar?baz=1&x=2')).toBe(
       'example.com/foo/bar?baz=1&x=2',

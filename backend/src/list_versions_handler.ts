@@ -4,6 +4,7 @@ import { getPathParts } from './tree-node-utils';
 const PAGE_SIZE = 100;
 
 type VersionRow = {
+  url: string;
   timestamp: number;
   successful_request_id: string | null;
   status: 'pending' | 'error' | 'ok' | 'redirect';
@@ -21,6 +22,7 @@ export function getListVersionsData(
   const versions = db
     .prepare<[string, number, number], VersionRow>(
       `SELECT rv.timestamp,
+              res.url,
               rv.successful_request_id,
               CASE
                 WHEN rv.successful_request_id IS NOT NULL AND sr.location IS NOT NULL THEN 'redirect'

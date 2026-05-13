@@ -9,7 +9,7 @@ export const SQL_NULL_SAFE_EQ = 'IS';
 
 export function openDatabase(filePath: string): DB {
   const db = new Database(filePath, {
-    verbose: console.log,
+    // verbose: console.log,
   });
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
@@ -17,7 +17,11 @@ export function openDatabase(filePath: string): DB {
   db.exec(`
     CREATE TABLE IF NOT EXISTS run (
       id TEXT PRIMARY KEY,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      cdx_entry_count INTEGER NOT NULL DEFAULT 0,
+      request_total INTEGER NOT NULL DEFAULT 0,
+      request_successful INTEGER NOT NULL DEFAULT 0,
+      request_errored INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS run_args (
@@ -69,8 +73,8 @@ export function openDatabase(filePath: string): DB {
     );
 
     CREATE TABLE IF NOT EXISTS resource (
-      url TEXT PRIMARY KEY REFERENCES tree_node(path) ON DELETE CASCADE,
-      normalized_url TEXT NOT NULL DEFAULT ''
+      url TEXT PRIMARY KEY,
+      normalized_url TEXT REFERENCES tree_node(path) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS resource_version (
@@ -183,6 +187,24 @@ export function openDatabase(filePath: string): DB {
 
     -- resources_handler filtered query: WHERE tn.level = ? AND tn.path LIKE ? AND tn.path > ?
     CREATE INDEX IF NOT EXISTS idx_tree_node_level_path ON tree_node(level, path);
+
+    CREATE TABLE IF NOT EXISTS run_domain_stats (
+      run_id TEXT NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+      cdx_id TEXT NOT NULL REFERENCES cdx_file(id) ON DELETE CASCADE,
+      requested INTEGER NOT NULL DEFAULT 0,
+      downloaded INTEGER NOT NULL DEFAULT 0,
+      errored INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (run_id, cdx_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS run_error_type_stats (
+      run_id TEXT NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+      cdx_id TEXT NOT NULL REFERENCES cdx_file(id) ON DELETE CASCADE,
+      error_name TEXT NOT NULL DEFAULT '',
+      error_code TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (run_id, cdx_id, error_name, error_code)
+    );
   `);
 
   return db;

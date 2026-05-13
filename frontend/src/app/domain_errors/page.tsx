@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -323,5 +323,9 @@ function DomainErrorsInner() {
 }
 
 export default function DomainErrorsPage() {
-  return <DomainErrorsInner />;
+  return (
+    <Suspense>
+      <DomainErrorsInner />
+    </Suspense>
+  );
 }

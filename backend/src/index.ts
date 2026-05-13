@@ -246,8 +246,8 @@ async function runRetryMode(
     verbose: boolean;
     output: string;
   },
-  pendingTaskCounts: PendingTaskCounts,
   runId: string,
+  isSyncDone: () => boolean,
   runDownloads: (tasks: DownloadTask[]) => Promise<void>,
 ): Promise<void> {
   const { skipErrorParams, skipErrorExistsClause } = buildSkipErrorFilter(
@@ -259,12 +259,7 @@ async function runRetryMode(
   const domainPlaceholders = domainIds.map(() => '?').join(', ');
   const outputFolder = args.output;
 
-  let cursor: { cdx_id: string; url: string; timestamp: number } | undefined;
-
   while (true) {
-    const cursorClause = cursor
-      ? 'AND (rvs.cdx_id, rvs.url, rvs.timestamp) > (?, ?, ?)'
-      : '';
     const pendingEntriesPage = db
       .prepare(
         `
@@ -274,18 +269,17 @@ async function runRetryMode(
           JOIN cdx_file cf ON cf.id = rvs.cdx_id
           WHERE rvs.cdx_id IN (${domainPlaceholders})
             AND rv.successful_request_id IS NULL
-            ${cursorClause}
             ${skipErrorExistsClause}
           ORDER BY rvs.cdx_id, rvs.url, rvs.timestamp
           LIMIT ${RETRY_TASK_PAGE_SIZE}`,
       )
-      .all(
-        ...domainIds,
-        ...(cursor ? [cursor.cdx_id, cursor.url, cursor.timestamp] : []),
-        ...skipErrorParams,
-      ) as RetryEntry[];
+      .all(...domainIds, ...skipErrorParams) as RetryEntry[];
 
     if (pendingEntriesPage.length === 0) {
+      if (!isSyncDone()) {
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
       break;
     }
 
@@ -299,13 +293,6 @@ async function runRetryMode(
     }));
 
     await runDownloads(tasks);
-
-    const lastEntry = pendingEntriesPage[pendingEntriesPage.length - 1];
-    cursor = {
-      cdx_id: lastEntry.cdx_id,
-      url: lastEntry.url,
-      timestamp: lastEntry.timestamp,
-    };
   }
 }
 
@@ -319,6 +306,8 @@ async function runSyncMode(
     cdxPageSize: number;
   },
   runId: string,
+  log: (msg: string) => void,
+  onNewEntries?: (count: number) => void,
 ): Promise<void> {
   const summary: Array<{
     domain: string;
@@ -327,14 +316,18 @@ async function runSyncMode(
   }> = [];
 
   for (const [cdxId, domain] of domains) {
-    console.log(`\nDomain: ${domain}`);
+    log(`\nDomain: ${domain}`);
 
     let domainEntryCount = 0;
     const newEntriesCapped: NewEntryPreview[] = [];
     let newEntryCount = 0;
 
     try {
-      for await (const pageEntries of fetchCdxRows(domain, args.cdxPageSize)) {
+      for await (const pageEntries of fetchCdxRows(
+        domain,
+        args.cdxPageSize,
+        log,
+      )) {
         domainEntryCount += pageEntries.length;
         if (args.dryRun) {
           const newEntries = findNewEntries(db, domain, pageEntries);
@@ -349,6 +342,7 @@ async function runSyncMode(
           );
           newEntryCount += insertedEntries.length;
           appendNewEntryPreviewsCapped(newEntriesCapped, insertedEntries);
+          onNewEntries?.(insertedEntries.length);
         }
       }
     } catch (err) {
@@ -357,19 +351,19 @@ async function runSyncMode(
     }
 
     if (domainEntryCount === 0) {
-      console.log('  No CDX entries found.');
+      log('  No CDX entries found.');
       continue;
     }
 
     summary.push({ domain, newEntriesCapped, newEntryCount });
   }
 
-  printSyncDryRunSummary(summary, args.verbose);
-
-  if (args.dryRun) return;
+  if (args.dryRun) {
+    printSyncDryRunSummary(summary, args.verbose);
+  }
 
   const totalNew = summary.reduce((sum, s) => sum + s.newEntryCount, 0);
-  console.log(
+  log(
     `\nSynced ${totalNew} new CDX entries across ${summary.length} domain(s).`,
   );
 }
@@ -388,14 +382,46 @@ async function main() {
     return;
   }
 
-  const proxies = args.dryRun
-    ? []
-    : loadProxies(args.proxyFile, args.maxReqPerPeriod!, args.periodMs!);
+  // Dry-run: show summaries only, no downloading
+  if (args.dryRun) {
+    if (!args.retryErrors) {
+      await runSyncMode(db, domains, args, runId, console.log);
+    }
+    const pendingTaskCounts = await countPendingTasks(
+      db,
+      domains,
+      args.skipErrors,
+      args.skipErrorMessages,
+    );
+    if (pendingTaskCounts.total === 0) {
+      console.log('No pending entries found.');
+      return;
+    }
+    runDownloadPlan(db, domains, args, pendingTaskCounts);
+    return;
+  }
 
+  // Live run
+  const proxies = loadProxies(
+    args.proxyFile,
+    args.maxReqPerPeriod!,
+    args.periodMs!,
+  );
   const limit = pLimit(args.concurrency);
+
+  const multiBar = new cliProgress.MultiBar(
+    {
+      format:
+        'Progress |{bar}| {value}/{total} | succeeded: {succeeded} | failed: {failed} | ETA: {eta_formatted}',
+      clearOnComplete: false,
+      hideCursor: true,
+    },
+    cliProgress.Presets.shades_classic,
+  );
 
   let succeeded = 0;
   let failed = 0;
+  let bar: cliProgress.SingleBar;
   const runDownloads = async (tasks: DownloadTask[]): Promise<void> => {
     await Promise.all(
       tasks.map((task) =>
@@ -409,38 +435,54 @@ async function main() {
     );
   };
 
-  if (!args.retryErrors) {
-    await runSyncMode(db, domains, args, runId);
+  if (args.retryErrors) {
+    // Sync skipped — count pending upfront and download
+    const pendingTaskCounts = await countPendingTasks(
+      db,
+      domains,
+      args.skipErrors,
+      args.skipErrorMessages,
+    );
+    if (pendingTaskCounts.total === 0) {
+      console.log('No pending entries found.');
+      return;
+    }
+    bar = multiBar.create(pendingTaskCounts.total, 0, {
+      succeeded: 0,
+      failed: 0,
+    });
+    await runRetryMode(db, domains, args, runId, () => true, runDownloads);
+  } else {
+    // Run sync and download concurrently
+    // Seed the bar total with whatever is already pending in the DB
+    const initialPending = await countPendingTasks(
+      db,
+      domains,
+      args.skipErrors,
+      args.skipErrorMessages,
+    );
+    bar = multiBar.create(initialPending.total, 0, { succeeded: 0, failed: 0 });
+    let barTotal = initialPending.total;
+    let syncDone = false;
+    await Promise.all([
+      runSyncMode(
+        db,
+        domains,
+        args,
+        runId,
+        (msg) => multiBar.log(msg + '\n'),
+        (count) => {
+          barTotal += count;
+          bar.setTotal(barTotal);
+        },
+      ).then(() => {
+        syncDone = true;
+      }),
+      runRetryMode(db, domains, args, runId, () => syncDone, runDownloads),
+    ]);
   }
 
-  const pendingTaskCounts = await countPendingTasks(
-    db,
-    domains,
-    args.skipErrors,
-    args.skipErrorMessages,
-  );
-
-  if (pendingTaskCounts.total === 0) {
-    console.log('No pending entries found.');
-    return;
-  }
-
-  runDownloadPlan(db, domains, args, pendingTaskCounts);
-
-  if (args.dryRun) {
-    return;
-  }
-
-  const bar = new cliProgress.SingleBar(
-    {
-      format:
-        'Progress |{bar}| {value}/{total} | succeeded: {succeeded} | failed: {failed} | ETA: {eta_formatted}',
-    },
-    cliProgress.Presets.shades_classic,
-  );
-  bar.start(pendingTaskCounts.total, 0, { succeeded: 0, failed: 0 });
-  await runRetryMode(db, domains, args, pendingTaskCounts, runId, runDownloads);
-  bar.stop();
+  multiBar.stop();
   console.log(`Complete. succeeded: ${succeeded}, failed: ${failed}`);
 }
 

@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, Suspense } from "react";
 import React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Spinner } from "@/components/ui/spinner";
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/breadcrumb";
 
 interface Version {
+  url: string;
   timestamp: number;
   successful_request_id: string | null;
   status: "pending" | "error" | "ok" | "redirect";
@@ -146,7 +147,7 @@ function ListVersionsInner() {
                 {v.status === "ok" || v.status === "redirect" ? (
                   <a
                     className="text-primary hover:underline"
-                    href={`${REPLAY_SERVER_URL}/replay/${v.timestamp}/${url}`}
+                    href={`${REPLAY_SERVER_URL}/replay/${v.timestamp}/${v.url}`}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -200,5 +201,9 @@ function ListVersionsInner() {
 }
 
 export default function ListVersionsPage() {
-  return <ListVersionsInner />;
+  return (
+    <Suspense>
+      <ListVersionsInner />
+    </Suspense>
+  );
 }
