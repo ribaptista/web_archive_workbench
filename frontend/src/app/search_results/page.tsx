@@ -114,7 +114,6 @@ function SearchResultsInner() {
 
   const buildApiUrl = useCallback(() => {
     const q = new URLSearchParams();
-    q.set("search_id", String(searchId));
     if (currentCursor) {
       q.set("cursor_timestamp", String(currentCursor.timestamp));
       q.set("cursor_request_id", currentCursor.requestId);
@@ -123,7 +122,7 @@ function SearchResultsInner() {
     for (const d of filterDomains) q.append("domain[]", d);
     for (const id of filterConditionIds) q.append("condition_id[]", String(id));
     for (const id of filterReactionTypeIds) q.append("reaction_type_id[]", String(id));
-    return `/api/search_results?${q}`;
+    return `/api/searches/${searchId}/results?${q}`;
   }, [searchId, currentCursor, similarTo, filterDomains, filterConditionIds, filterReactionTypeIds]);
 
   const load = useCallback(() => {
@@ -215,7 +214,7 @@ function SearchResultsInner() {
   async function toggleReaction(url: string, timestamp: number, reactionTypeId: number) {
     const key = `${url}|${timestamp}:${reactionTypeId}`;
     const isActive = activeReactions.has(key);
-    const res = await fetch("/reactions", {
+    const res = await fetch("/reactions/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ resource_version_url: url, resource_version_timestamp: timestamp, reaction_type_id: reactionTypeId, active: !isActive }),

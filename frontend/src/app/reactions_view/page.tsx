@@ -63,7 +63,7 @@ function ReactionsViewInner() {
       page: String(page),
     });
     for (const d of filterDomainsKey ? filterDomainsKey.split(",") : []) q.append("domain[]", d);
-    fetch(`/api/reactions_view?${q}`)
+    fetch(`/reactions/?${q}`)
       .then((r) => {
         if (!r.ok) throw new Error(r.statusText);
         return r.json();
@@ -81,7 +81,7 @@ function ReactionsViewInner() {
   async function toggleReaction(url: string, timestamp: number, rtId: number) {
     const key = `${url}|${timestamp}:${rtId}`;
     const isActive = activeReactions.has(key);
-    const res = await fetch("/reactions", {
+    const res = await fetch("/reactions/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ resource_version_url: url, resource_version_timestamp: timestamp, reaction_type_id: rtId, active: !isActive }),

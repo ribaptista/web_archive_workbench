@@ -45,7 +45,7 @@ export default function SearchesPage() {
   const [autoRefresh, setAutoRefresh] = useState(false);
 
   const load = useCallback(() => {
-    fetch("/api/searches")
+    fetch("/api/searches/")
       .then((r) => {
         if (!r.ok) throw new Error(r.statusText);
         return r.json();

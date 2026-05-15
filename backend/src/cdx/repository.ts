@@ -81,6 +81,26 @@ export interface TreeNodeRow {
 
 // ── Retry / pending task queries ──────────────────────────────────────────────
 
+export interface ReplayCdxRow {
+  timestamp: number;
+  mimetype: string;
+  body_digest: string;
+  domain: string;
+  terminal_original: string;
+  location_original: string | null;
+  location_timestamp: number | null;
+}
+
+export interface ReplayCdxRow {
+  timestamp: number;
+  mimetype: string;
+  body_digest: string;
+  domain: string;
+  terminal_original: string;
+  location_original: string | null;
+  location_timestamp: number | null;
+}
+
 export interface PendingCountRow {
   domain_name: string;
   n: number;
@@ -650,6 +670,47 @@ export class CdxRepository {
          LIMIT ?`,
       )
       .all(cursorUrl, cursorTimestamp, ...domainIds, limit);
+  }
+
+  // ── Replay lookup ────────────────────────────────────────────────────────────
+
+  findReplayCdxByOriginal(
+    original: string,
+    timestamp: number,
+  ): ReplayCdxRow | undefined {
+    return this.db
+      .prepare<[string, number], ReplayCdxRow>(
+        `SELECT rv.timestamp, r.mimetype, r.body_digest, rvs.domain_name AS domain,
+                rv.url AS terminal_original, r.location_original, r.location_timestamp
+         FROM resource_version rv
+         JOIN request r ON r.id = rv.successful_request_id
+         JOIN resource_version_source rvs ON rvs.url = rv.url AND rvs.timestamp = rv.timestamp
+         WHERE rv.url = ?
+           AND r.body_digest IS NOT NULL
+         ORDER BY ABS(rv.timestamp - ?)
+         LIMIT 1`,
+      )
+      .get(original, timestamp);
+  }
+
+  findReplayCdxByNormalizedUrl(
+    normalizedUrl: string,
+    timestamp: number,
+  ): ReplayCdxRow[] {
+    return this.db
+      .prepare<[string, number], ReplayCdxRow>(
+        `SELECT rv.timestamp, r.mimetype, r.body_digest, rvs.domain_name AS domain,
+                rv.url AS terminal_original, r.location_original, r.location_timestamp
+         FROM resource r2
+         JOIN resource_version rv ON rv.url = r2.url
+         JOIN request r ON r.id = rv.successful_request_id
+         JOIN resource_version_source rvs ON rvs.url = rv.url AND rvs.timestamp = rv.timestamp
+         WHERE r2.normalized_url = ?
+           AND r.body_digest IS NOT NULL
+         ORDER BY ABS(rv.timestamp - ?)
+         LIMIT 2`,
+      )
+      .all(normalizedUrl, timestamp);
   }
 }
 

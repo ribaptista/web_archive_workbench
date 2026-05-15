@@ -21,7 +21,7 @@ export default function DomainsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/domains_stats")
+    fetch("/api/domains/stats")
       .then((r) => {
         if (!r.ok) throw new Error(r.statusText);
         return r.json();

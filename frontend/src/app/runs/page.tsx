@@ -44,7 +44,7 @@ export default function RunsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/runs")
+    fetch("/api/runs/")
       .then((r) => {
         if (!r.ok) throw new Error(r.statusText);
         return r.json();

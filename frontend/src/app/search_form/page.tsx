@@ -27,7 +27,7 @@ export default function SearchFormPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/domains")
+    fetch("/api/domains/")
       .then((r) => r.json())
       .then((loaded: Domain[]) => {
         setDomains(loaded);
@@ -86,7 +86,7 @@ export default function SearchFormPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/run_search", { method: "POST", body });
+      const res = await fetch("/api/searches/", { method: "POST", body });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
         setError(err.error ?? "Server error");

@@ -63,7 +63,7 @@ function DomainErrorsInner() {
   // Load filter options once; default local selections to "all" when no filter is in the URL
   useEffect(() => {
     if (!domain) return;
-    fetch(`/api/domain_error_filters?domain=${encodeURIComponent(domain)}`)
+    fetch(`/api/domains/error_filters?domain=${encodeURIComponent(domain)}`)
       .then((r) => {
         if (!r.ok) throw new Error(r.statusText);
         return r.json() as Promise<FilterOption[]>;
@@ -88,7 +88,7 @@ function DomainErrorsInner() {
         q.set("cursor_ts", String(cursor.timestamp));
       }
       (append ? setLoadingMore : setLoading)(true);
-      fetch(`/api/domain_errors?${q}`)
+      fetch(`/api/domains/errors?${q}`)
         .then((r) => {
           if (!r.ok) throw new Error(r.statusText);
           return r.json() as Promise<ErrorsData>;
