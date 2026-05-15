@@ -1,6 +1,11 @@
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import path from 'path';
+import {
+  DEFAULT_CDX_BASE_URL,
+  DEFAULT_CDX_STRATEGY,
+  DEFAULT_REPLAY_BASE_URL,
+} from './cdx';
 
 export interface CliArgs {
   domain: string[];
@@ -17,6 +22,9 @@ export interface CliArgs {
   skipErrorMessages: string[];
   dryRun: boolean;
   verbose: boolean;
+  cdxBaseUrl: string;
+  cdxStrategy: 'json_wayback' | 'json_pywb';
+  replayBaseUrl: string;
 }
 
 const DEFAULT_CDX_PAGE_SIZE = 128;
@@ -81,6 +89,23 @@ export function parseArgs(): CliArgs {
       string: true,
       description:
         'Error message substring(s) to treat as success when downloading',
+    })
+    .option('cdx-base-url', {
+      type: 'string',
+      description: 'Base URL for CDX API',
+      default: DEFAULT_CDX_BASE_URL,
+    })
+    .option('cdx-strategy', {
+      type: 'string',
+      choices: ['json_wayback', 'json_pywb'] as const,
+      description:
+        'CDX fetch strategy: json_wayback (Wayback resumeKey pagination) or json_pywb (single-page jsonlines)',
+      default: DEFAULT_CDX_STRATEGY,
+    })
+    .option('replay-base-url', {
+      type: 'string',
+      description: 'Base URL for replaying archived resources',
+      default: DEFAULT_REPLAY_BASE_URL,
     })
     .option('dry-run', {
       type: 'boolean',
@@ -163,5 +188,8 @@ export function parseArgs(): CliArgs {
     skipErrorMessages,
     dryRun: argv['dry-run'] as boolean,
     verbose: argv.v as boolean,
+    cdxBaseUrl: argv['cdx-base-url'] as string,
+    cdxStrategy: argv['cdx-strategy'] as 'json_wayback' | 'json_pywb',
+    replayBaseUrl: argv['replay-base-url'] as string,
   };
 }

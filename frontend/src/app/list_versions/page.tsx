@@ -52,7 +52,8 @@ function statusBadge(status: string) {
 function ListVersionsInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const url = params.get("url") ?? "";
+  const originalUrl = params.get("originalUrl");
+  const url = originalUrl ?? params.get("url") ?? "";
 
   const [versions, setVersions] = useState<Version[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbPart[]>([]);
@@ -63,7 +64,7 @@ function ListVersionsInner() {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const fetchPage = useCallback((cursor: number | null, append: boolean) => {
-    const q = new URLSearchParams({ url });
+    const q = new URLSearchParams(originalUrl ? { originalUrl } : { url });
     if (cursor !== null) q.set("cursor", String(cursor));
     (append ? setLoadingMore : setLoading)(true);
     fetch(`/api/list_versions?${q}`)
@@ -78,7 +79,7 @@ function ListVersionsInner() {
       })
       .catch((e) => setError(e.message))
       .finally(() => (append ? setLoadingMore : setLoading)(false));
-  }, [url]);
+  }, [url, originalUrl]);
 
   useEffect(() => {
     if (!url) return;
@@ -86,7 +87,7 @@ function ListVersionsInner() {
     setNextCursor(null);
     setError(null);
     fetchPage(null, false);
-  }, [fetchPage, url]);
+  }, [fetchPage]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -143,7 +144,7 @@ function ListVersionsInner() {
           {versions.map((v) => {
             const ts = String(v.timestamp);
             return (
-              <li key={v.timestamp} className="flex items-center gap-2 px-4 py-2 text-sm flex-wrap">
+              <li key={`${v.url}@${v.timestamp}`} className="flex items-center gap-2 px-4 py-2 text-sm flex-wrap">
                 {v.status === "ok" || v.status === "redirect" ? (
                   <a
                     className="text-primary hover:underline"
@@ -156,6 +157,8 @@ function ListVersionsInner() {
                 ) : (
                   <span className="text-muted-foreground">{ts}</span>
                 )}
+
+                <span className="text-muted-foreground text-xs font-mono truncate max-w-xs" title={v.url}>{v.url}</span>
 
                 {statusBadge(v.status)}
 

@@ -62,6 +62,8 @@ export function openDatabase(filePath: string): DB {
       length INTEGER,
       raw TEXT NOT NULL,
       is_valid INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      replay_base_url TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(cdx_id, raw)
     );

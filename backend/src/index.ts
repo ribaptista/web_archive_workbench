@@ -245,6 +245,7 @@ async function runRetryMode(
     dryRun: boolean;
     verbose: boolean;
     output: string;
+    replayBaseUrl: string;
   },
   runId: string,
   isSyncDone: () => boolean,
@@ -269,11 +270,17 @@ async function runRetryMode(
           JOIN cdx_file cf ON cf.id = rvs.cdx_id
           WHERE rvs.cdx_id IN (${domainPlaceholders})
             AND rv.successful_request_id IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM request r
+              WHERE r.run_id = ?
+                AND r.resource_version_url = rv.url
+                AND r.resource_version_timestamp = rv.timestamp
+            )
             ${skipErrorExistsClause}
           ORDER BY rvs.cdx_id, rvs.url, rvs.timestamp
           LIMIT ${RETRY_TASK_PAGE_SIZE}`,
       )
-      .all(...domainIds, ...skipErrorParams) as RetryEntry[];
+      .all(...domainIds, runId, ...skipErrorParams) as RetryEntry[];
 
     if (pendingEntriesPage.length === 0) {
       if (!isSyncDone()) {
@@ -290,6 +297,7 @@ async function runRetryMode(
       cdxId: entry.cdx_id,
       normalizedDomain: entry.normalized_domain,
       outputFolder,
+      replayBaseUrl: args.replayBaseUrl,
     }));
 
     await runDownloads(tasks);
@@ -304,6 +312,9 @@ async function runSyncMode(
     verbose: boolean;
     output: string;
     cdxPageSize: number;
+    cdxBaseUrl: string;
+    cdxStrategy: 'json_wayback' | 'json_pywb';
+    replayBaseUrl: string;
   },
   runId: string,
   log: (msg: string) => void,
@@ -327,6 +338,9 @@ async function runSyncMode(
         domain,
         args.cdxPageSize,
         log,
+        args.cdxBaseUrl,
+        args.cdxStrategy,
+        args.replayBaseUrl,
       )) {
         domainEntryCount += pageEntries.length;
         if (args.dryRun) {

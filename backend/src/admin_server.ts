@@ -13,6 +13,7 @@ import { deleteSearch, getSearchesData } from './searches_handler';
 import { setReaction } from './reaction';
 import { getResourcesData } from './resources_handler';
 import { getListVersionsData } from './list_versions_handler';
+import { normalizeUrl } from './tree-node-utils';
 import { getReactionsViewData } from './reactions_view_handler';
 import { getDomainsStats } from './domains_handler';
 import {
@@ -319,9 +320,19 @@ async function main(): Promise<void> {
   });
 
   fastify.get('/api/list_versions', async (request, reply) => {
-    const query = request.query as { url?: string; cursor?: string };
-    const url = query.url?.trim() || '';
-    if (!url) return reply.code(400).send({ error: 'Missing url' });
+    const query = request.query as {
+      url?: string;
+      originalUrl?: string;
+      cursor?: string;
+    };
+    let url: string;
+    if (query.originalUrl?.trim()) {
+      url = normalizeUrl(query.originalUrl.trim());
+    } else {
+      url = query.url?.trim() || '';
+    }
+    if (!url)
+      return reply.code(400).send({ error: 'Missing url or originalUrl' });
     const cursor = query.cursor ? Number(query.cursor) : null;
     return reply.send(getListVersionsData(db, url, cursor));
   });

@@ -3,11 +3,11 @@ import type { ParsedCdxEntry } from './cdx';
 
 export type { ParsedCdxEntry };
 
-export function findNewEntries(
+export function findNewEntries<T extends ParsedCdxEntry>(
   db: DB,
   domain: string,
-  entries: ParsedCdxEntry[],
-): ParsedCdxEntry[] {
+  entries: T[],
+): T[] {
   const stmt = db.prepare<[string, string], { n: number }>(
     `SELECT COUNT(*) AS n
      FROM cdx_entry ce

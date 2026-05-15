@@ -294,6 +294,13 @@ X progress bar
   - order by download time?
 - stop/slow down on 429/503?
 
+- multibars -> one per domain?
+- run properties: finished cdx sync; finished downloads
+
+- add non wayback urls (whiplash?)
+- like button in resource list
+- new discovered: 100 | pending: 0 | downloaded: 99 | failed: 1
+
 * counts per domain (run) -> double counting because no request -> domain direct relationship?
 * clean up errors on success/latest error
 * retry pirilampus+borderline+(all others?)
@@ -307,9 +314,14 @@ X progress bar
 * follow foreign domains
 * AND (borderline + sorocaba)
 * date filter
-* encoding
+* encoding tag
   - support xml mimetype + encoding declaration
 * on delete cascade -> messes up counts
+
+- on log -> progress bar disappears until it changes values?
+- fetch cdx messages
+- versions -> calendar view
+- standard page width
 
 - partial cdx (date range)
 

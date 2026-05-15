@@ -103,15 +103,15 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   const match = tab.url.match(REPLAY_URL_RE);
   if (!match) return;
   const timestamp = match[1];
-  const url = match[2];
+  const originalUrl = match[2];
 
   if (info.menuItemId === MENU_ID) {
     chrome.tabs.create({
-      url: `http://localhost:3000/list_versions?url=${encodeURIComponent(url)}`,
+      url: `http://localhost:3000/list_versions?originalUrl=${encodeURIComponent(originalUrl)}`,
     });
   } else if (info.menuItemId === MENU_ID_WAYBACK) {
     chrome.tabs.create({
-      url: `https://web.archive.org/web/${timestamp}/${url}`,
+      url: `https://web.archive.org/web/${timestamp}/${originalUrl}`,
     });
   }
 });

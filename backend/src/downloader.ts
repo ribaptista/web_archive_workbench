@@ -15,25 +15,35 @@ import { detectEncoding } from './encoding';
 const gunzipAsync = promisify(gunzip);
 
 const GZIP_MAGIC = Buffer.from([0x1f, 0x8b]);
-const WAYBACK_URL_RE = /^https?:\/\/web\.archive\.org\/web\/(\d+)id_\/(.+)$/;
 const ABORT_CONTROLLER_TIMEOUT_MS = 40_000;
 const HEADER_TIMEOUT_MS = 10_000;
 const BODY_TIMEOUT_MS = 20_000;
 const MAX_REDIRECT_COUNT = 20;
+
+const WAYBACK_SUFFIX_RE = /^(\d+)id_\/(.+)$/;
 
 interface ParsedWaybackUrl {
   timestamp: number;
   original: string;
 }
 
-function parseWaybackUrl(url: string): ParsedWaybackUrl | null {
-  const m = WAYBACK_URL_RE.exec(url);
+function parseWaybackUrl(
+  url: string,
+  replayBaseUrl: string,
+): ParsedWaybackUrl | null {
+  if (!url.startsWith(replayBaseUrl)) return null;
+  const suffix = url.slice(replayBaseUrl.length);
+  const m = WAYBACK_SUFFIX_RE.exec(suffix);
   if (!m) return null;
   return { timestamp: parseInt(m[1], 10), original: m[2] };
 }
 
-function buildWaybackUrl(timestamp: number | null, original: string): string {
-  return `https://web.archive.org/web/${timestamp ?? ''}id_/${original}`;
+function buildWaybackUrl(
+  replayBaseUrl: string,
+  timestamp: number | null,
+  original: string,
+): string {
+  return `${replayBaseUrl}${timestamp ?? ''}id_/${original}`;
 }
 
 interface RawResponse {
@@ -115,6 +125,7 @@ export interface DownloadTask {
   cdxId: string;
   normalizedDomain: string;
   outputFolder: string;
+  replayBaseUrl: string;
 }
 
 interface ResourceVersionState {
@@ -246,7 +257,11 @@ export async function downloadEntry(
     return { successfulRequestId, lastErroredRequestId, status };
   }
 
-  let currentUrl = buildWaybackUrl(task.timestamp, task.original);
+  let currentUrl = buildWaybackUrl(
+    task.replayBaseUrl,
+    task.timestamp,
+    task.original,
+  );
 
   // Returns true if this is the first successful download of the resource
   // (used to decide whether to keep generated files).
@@ -313,7 +328,7 @@ export async function downloadEntry(
     const proxy = pickProxy(proxies);
     proxy.ongoing++;
 
-    const parsedUrl = parseWaybackUrl(currentUrl);
+    const parsedUrl = parseWaybackUrl(currentUrl, task.replayBaseUrl);
     if (!parsedUrl) throw new Error(`Invalid Wayback URL: ${currentUrl}`);
     const urlOriginal = parsedUrl.original;
     const urlTimestamp = parsedUrl.timestamp;
@@ -387,7 +402,7 @@ export async function downloadEntry(
       : null;
     const parsedRedirectTarget =
       isRedirect(statusCode) && resolvedLocation !== null
-        ? parseWaybackUrl(resolvedLocation)
+        ? parseWaybackUrl(resolvedLocation, task.replayBaseUrl)
         : null;
     const redirectLoop =
       isRedirect(statusCode) &&

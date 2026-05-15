@@ -25,39 +25,6 @@ type VersionRow = {
   error_code: string | null;
 };
 
-function appendVersionOverlay(
-  html: Buffer,
-  versions: VersionRow[],
-  currentTimestamp: number,
-  url: string,
-  adminBaseUrl: string,
-): Buffer {
-  const items = versions
-    .map(({ timestamp, original, has_success, has_attempt, error_code }) => {
-      const href = `http://localhost:${PORT}/replay/${timestamp}/${escapeHtml(original)}`;
-      const isCurrent = timestamp === currentTimestamp;
-      let tag = '';
-      if (has_attempt === 0) {
-        tag =
-          '<span style="all:unset;display:inline;font-family:monospace;font-size:10px;line-height:1.4;color:#aaa;margin-right:4px;">[PENDING]</span>';
-      } else if (has_success === 0) {
-        const label = error_code ? `ERROR:${error_code}` : 'ERROR';
-        tag = `<span style="all:unset;display:inline;font-family:monospace;font-size:10px;line-height:1.4;color:#aaa;margin-right:4px;">[${escapeHtml(label)}]</span>`;
-      }
-      const color = isCurrent ? 'color:#fff;' : 'color:#aaa;';
-      const weight = isCurrent ? 'font-weight:bold;' : '';
-      return `<li style="all:unset;display:block;margin-bottom:4px;"><a href="${href}" style="all:unset;display:block;font-family:monospace;font-size:12px;line-height:1.4;text-decoration:none;cursor:pointer;${color}${weight}">${tag}${timestamp}</a></li>`;
-    })
-    .join('');
-  const overlay = `
-<div id="__wayback_versions__" style="all:initial;display:block;position:fixed;top:0;right:0;height:100vh;width:180px;overflow-y:auto;background:rgba(0,0,0,0.85);color:#fff;font-family:monospace;font-size:12px;line-height:1.4;z-index:2147483647;padding:8px;box-sizing:border-box;">
-  <div style="all:unset;display:block;font-family:monospace;font-size:12px;line-height:1.4;color:#fff;font-weight:bold;margin-bottom:8px;border-bottom:1px solid #555;padding-bottom:4px;">Versions (${versions.length})</div>
-  <ul style="all:unset;display:block;list-style:none;margin:0;padding:0;">${items}</ul>
-  <div style="all:unset;display:block;margin-top:8px;border-top:1px solid #555;padding-top:6px;"><a href="${adminBaseUrl}/list_versions?url=${encodeURIComponent(url)}" target="_blank" style="all:unset;display:inline;font-family:monospace;font-size:11px;line-height:1.4;color:#aaa;text-decoration:none;cursor:pointer;">show in tree</a></div>
-</div>`;
-  return Buffer.concat([html, Buffer.from(overlay, 'utf8')]);
-}
-
 function main() {
   const argv = yargs(hideBin(process.argv))
     .option('db', {
@@ -317,23 +284,6 @@ function main() {
       return;
     }
 
-    if (row.mimetype !== null && row.mimetype.startsWith('text/html')) {
-      const versions = stmtVersions.all(original, row.domain);
-      console.log(
-        '------------------',
-        original,
-        versions.length,
-        'versions found',
-      );
-      data = appendVersionOverlay(
-        data,
-        versions,
-        row.timestamp,
-        original,
-        ADMIN_BASE_URL,
-      );
-    }
-    // console.log(`[replay] 200 ${original} (${filePath})`);
     res.writeHead(200, { 'Content-Type': row.mimetype });
     res.end(data);
   }
