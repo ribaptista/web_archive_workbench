@@ -31,7 +31,6 @@ export interface InsertRequestTxParams {
 }
 
 export interface InsertRequestTxResult {
-  isFirstSuccessfulForResourceVersion: boolean;
   isDuplicateRedirect: boolean;
 }
 
@@ -122,7 +121,7 @@ function buildAndInsertRequest(
     resourceVersionUrl: urlOriginal,
     resourceVersionTimestamp: urlTimestamp,
     statusCode: response?.statusCode,
-    bodyDigest: bodyParser?.getBodyDigest() ?? undefined,
+    bodyDigest: bodyParser?.isParsed() ? bodyParser.getBodyDigest() : undefined,
     inferredGzip: bodyParser?.getCompressionFormat() === 'gzip' ? 1 : undefined,
     durationMs: requestMetadata.durationMs,
     proxyAddress: requestMetadata.proxyAddress ?? undefined,
@@ -168,7 +167,6 @@ export function insertRequestTx(
   } = params;
 
   const isSuccessful = errors.length === 0;
-  let isFirstSuccessfulForResourceVersion = false;
   let isDuplicateRedirect = false;
 
   db.transaction(() => {
@@ -191,8 +189,8 @@ export function insertRequestTx(
     insertHeaders(reqRepo, requestId, response?.headers ?? {});
 
     if (
-      redirectMetadata !== undefined &&
       isSuccessful &&
+      redirectMetadata !== undefined &&
       isSuccessfulRedirectResolution(redirectMetadata) &&
       !redirectMetadata.isForeignDomain
     ) {
@@ -205,25 +203,41 @@ export function insertRequestTx(
       );
     }
 
-    if (isSuccessful) {
-      isFirstSuccessfulForResourceVersion =
-        applySuccessfulResourceVersionResult(
-          cdxRepo,
-          urlOriginal,
-          urlTimestamp,
-          requestId,
-        );
-    } else {
-      applyErroredResourceVersionResult(
-        cdxRepo,
-        urlOriginal,
-        urlTimestamp,
-        requestId,
-      );
-    }
+    updateResourceVersionResult(
+      cdxRepo,
+      urlOriginal,
+      urlTimestamp,
+      requestId,
+      isSuccessful,
+    );
   })();
 
-  return { isFirstSuccessfulForResourceVersion, isDuplicateRedirect };
+  return { isDuplicateRedirect };
+}
+
+function updateResourceVersionResult(
+  cdxRepo: CdxRepository,
+  urlOriginal: string,
+  urlTimestamp: number,
+  requestId: string,
+  isSuccessful: boolean,
+): void {
+  if (isSuccessful) {
+    applySuccessfulResourceVersionResult(
+      cdxRepo,
+      urlOriginal,
+      urlTimestamp,
+      requestId,
+    );
+    return;
+  }
+
+  applyErroredResourceVersionResult(
+    cdxRepo,
+    urlOriginal,
+    urlTimestamp,
+    requestId,
+  );
 }
 
 export interface ResourceVersionState {
@@ -260,7 +274,6 @@ export function getResourceVersionState(
 }
 
 // Returns true if this is the first successful download of the resource
-// (used to decide whether to keep generated files).
 // Uses optimistic locking: if .changes === 0, another worker won the race.
 export function applySuccessfulResourceVersionResult(
   cdxRepo: CdxRepository,

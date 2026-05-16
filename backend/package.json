@@ -8,7 +8,6 @@
     "start": "ts-node src/index.ts",
     "db:migrate": "tsx src/db/migrate.ts"
   },
-  },
   "author": "",
   "license": "ISC",
   "dependencies": {

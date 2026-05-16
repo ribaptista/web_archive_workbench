@@ -1,7 +1,7 @@
 import path from 'path';
 import { BodyParser } from '../http/body_parser';
 import { htmlExtractToFiles } from '../storage/html';
-import { nestedIdPath } from '../storage/id-path';
+import { nestedIdPath, getAssetPath } from '../storage/id-path';
 import { saveFileUnsafe, saveFileSafe } from '../storage/fs';
 import { type ContentType } from '../http/content_type';
 
@@ -45,11 +45,7 @@ async function handleParsedBody(
 ): Promise<string | undefined> {
   const bodyDigest = bodyParser.getBodyDigest();
   const finalBody = bodyParser.getParsed();
-  const finalAssetPath = nestedIdPath(
-    path.join(outputFolder, 'assets'),
-    bodyDigest,
-    2,
-  );
+  const finalAssetPath = getAssetPath(outputFolder, bodyDigest);
   const isNewFile = await saveFinalBody(
     finalBody,
     finalAssetPath,

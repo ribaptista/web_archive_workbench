@@ -19,3 +19,11 @@ export function nestedIdPath(
   }
   return path.join(baseDir, ...prefixes, id);
 }
+
+/**
+ * Returns the path of the asset file for a given body digest within a
+ * base output folder.
+ */
+export function getAssetPath(baseFolder: string, bodyDigest: string): string {
+  return nestedIdPath(path.join(baseFolder, 'assets'), bodyDigest, 2);
+}

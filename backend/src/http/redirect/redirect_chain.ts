@@ -1,6 +1,6 @@
 import { RedirectError } from './types';
 
-const MAX_REDIRECT_COUNT = 20;
+export const MAX_REDIRECT_COUNT = 20;
 
 export class RedirectChain {
   private readonly locations: string[] = [];

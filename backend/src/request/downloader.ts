@@ -145,11 +145,17 @@ async function processNextRedirectHop(
     replayServer,
     task.normalizedDomain,
   );
-  if (redirectMetadata !== undefined && !isSuccessfulRedirectResolution(redirectMetadata)) {
+  if (
+    redirectMetadata !== undefined &&
+    !isSuccessfulRedirectResolution(redirectMetadata)
+  ) {
     errors.push(redirectMetadata.error);
   }
 
-  if (redirectMetadata !== undefined) {
+  if (
+    redirectMetadata !== undefined &&
+    isSuccessfulRedirectResolution(redirectMetadata)
+  ) {
     const redirectError = client.canFollowRedirect();
     if (redirectError) {
       errors.push(redirectError);
@@ -174,7 +180,7 @@ export async function downloadEntry(
   task: DownloadTask,
   pool: ProxyPool,
 ): Promise<boolean> {
-  const { runId, outputFolder } = task;
+  const { runId } = task;
   const replayServer = new ReplayServer(task.replayBaseUrl);
   const client = new RedirectAwareClient(
     replayServer.buildReplayUrl(task.timestamp, task.original),
@@ -229,7 +235,7 @@ export async function downloadEntry(
     if (!hop || hop.errors.length > 0) return false;
 
     if (isDuplicateRedirect) {
-      return true; // redirect target already exists, work is done
+      return true;
     }
 
     // Follow redirect

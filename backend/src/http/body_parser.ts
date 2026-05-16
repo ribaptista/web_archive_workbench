@@ -60,7 +60,10 @@ export class BodyParser {
   }
 
   getCompressionFormat(): 'gzip' | undefined {
-    this.throwIfNotReady();
+    if (this.parsed === undefined && this.parseErr === undefined)
+      throw new Error('BodyParser: parse() has not been called yet');
+    // Return inferred encoding even if decompression failed — it was detected
+    // from the magic bytes before the error occurred.
     return this.inferredEncoding;
   }
 

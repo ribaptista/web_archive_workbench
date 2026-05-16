@@ -10,7 +10,7 @@ import type {
   WorkerSuccess,
 } from '../file_search_worker/file_search_worker';
 import { type WorkerError } from '../../worker/worker_utils';
-import { nestedIdPath } from '../../storage/id-path';
+import { getAssetPath } from '../../storage/id-path';
 import { SearchRepository } from '../repository';
 import { CdxRepository } from '../../cdx/repository';
 
@@ -155,11 +155,7 @@ async function runSearchScan(req: SearchScanRequest): Promise<void> {
       const tasks = candidates.map((candidate) =>
         (async () => {
           const filePath =
-            nestedIdPath(
-              path.join(baseFolder, 'assets'),
-              candidate.body_digest,
-              2,
-            ) + '.text';
+            getAssetPath(baseFolder, candidate.body_digest) + '.text';
           const worker = await acquireWorker();
           const matchStart = Date.now();
           try {
