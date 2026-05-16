@@ -32,11 +32,6 @@ export interface RequestCdxInfoRow {
 export class RequestRepository {
   constructor(private readonly db: DB) {}
 
-  /**
-   * Inserts the request row, skipping if the resource_version already has a
-   * successful request (the WHERE NOT EXISTS guard).
-   * Returns the run result so the caller can check .changes.
-   */
   insertRequest(params: InsertRequestParams): { changes: number } {
     return this.db
       .prepare(
@@ -49,17 +44,13 @@ export class RequestRepository {
            encoding, encoding_source, chardet_confidence,
            is_foreign_redirect, redirect_domain, redirect_normalized_domain
          )
-         SELECT ?, ?,
+         VALUES (?, ?,
                 ?, ?,
                 ?, ?, ?,
                 ?, ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, ?,
-                ?, ?, ?
-         WHERE NOT EXISTS (
-           SELECT 1 FROM resource_version
-           WHERE url = ? AND timestamp = ? AND successful_request_id IS NOT NULL
-         )`,
+                ?, ?, ?)`,
       )
       .run(
         params.id,
@@ -82,9 +73,6 @@ export class RequestRepository {
         params.isForeignRedirect,
         params.redirectDomain,
         params.redirectNormalizedDomain,
-        // WHERE NOT EXISTS params
-        params.resourceVersionUrl,
-        params.resourceVersionTimestamp,
       ) as { changes: number };
   }
 

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { describe, it, expect } from 'vitest';
 import { downloadEntry } from './downloader';
-import { getAssetPath } from '../storage/id-path';
+import { buildAssetPath } from './paths';
 import {
   createMockPool,
   seedResourceVersion,
@@ -102,7 +102,7 @@ describe('downloadEntry – redirect', () => {
     expect(ctx.testRepo.countRequestErrors(terminalRequestId!)).toBe(0);
 
     const { body_digest: bodyDigest } = terminalRequest;
-    const assetBase = getAssetPath(ctx.outputFolder, bodyDigest);
+    const assetBase = buildAssetPath(ctx.outputFolder, bodyDigest);
     expect(fs.existsSync(assetBase)).toBe(true);
     expect(fs.existsSync(assetBase + '.text')).toBe(true);
   });

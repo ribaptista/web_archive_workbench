@@ -1,6 +1,6 @@
 import { RedirectChain } from './redirect_chain';
 import { RedirectError } from './types';
-import { ProxyPool, type RawResponse } from '../proxy_pool';
+import { AgentPool, type RawResponse } from '../agent_pool';
 import { resolveLocationHeader } from './header';
 
 export function isRedirect(status: number): boolean {
@@ -14,7 +14,7 @@ export class RedirectAwareClient {
 
   constructor(
     initialUrl: string,
-    private readonly pool: ProxyPool,
+    private readonly pool: AgentPool,
   ) {
     this.nextUrl = initialUrl;
   }

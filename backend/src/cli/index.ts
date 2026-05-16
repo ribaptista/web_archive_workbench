@@ -13,8 +13,8 @@ import {
   getOrCreateCdxSource,
   findNewEntries,
 } from '../cdx/sync';
-import { loadProxies } from '../http/proxy';
-import { ProxyPool } from '../http/proxy_pool';
+import { loadAgents } from '../http/agents';
+import { AgentPool } from '../http/agent_pool';
 import { downloadEntry, type DownloadTask } from '../request/downloader';
 
 import type { Database as DB } from 'better-sqlite3';
@@ -381,8 +381,8 @@ async function main() {
   }
 
   // Live run
-  const pool = new ProxyPool(
-    loadProxies(args.proxyFile, args.maxReqPerPeriod!, args.periodMs!),
+  const pool = new AgentPool(
+    loadAgents(args.proxyFile, args.maxReqPerPeriod!, args.periodMs!),
   );
   const limit = pLimit(args.concurrency);
 

@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { CdxRepository, ReplayCdxRow } from '../../cdx/repository';
 import { normalizeUrl } from '../../http/url';
-import { nestedIdPath, getAssetPath } from '../../storage/id-path';
+import { buildAssetPath } from '../../request/paths';
 
 function lookupCdxRow(
   cdxRepo: CdxRepository,
@@ -88,7 +88,7 @@ export function registerReplayRoutes(
         );
       }
 
-      const filePath = getAssetPath(baseFolder, row.body_digest);
+      const filePath = buildAssetPath(baseFolder, row.body_digest);
 
       let data: Buffer;
       try {

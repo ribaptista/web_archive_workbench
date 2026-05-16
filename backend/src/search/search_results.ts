@@ -1,6 +1,6 @@
 import path from 'path';
 import type { Eta } from 'eta';
-import { getAssetPath } from '../storage/id-path';
+import { buildAssetPath } from '../request/paths';
 import fs from 'fs';
 import { SearchRepository } from './repository';
 import { ReactionRepository } from '../reaction/repository';
@@ -172,7 +172,7 @@ export function getSearchResultsData(
         fileError = `Missing domain or body_digest for request_id=${file.request_id}`;
         console.error(`[search ${searchId}] ${fileError}`);
       } else {
-        const filePath = getAssetPath(baseFolder, file.body_digest) + '.text';
+        const filePath = buildAssetPath(baseFolder, file.body_digest) + '.text';
         try {
           fileContent = fs.readFileSync(filePath, 'utf8');
         } catch (err) {

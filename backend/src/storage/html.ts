@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import { Parser } from 'htmlparser2';
 import { renameTmpOrDiscard } from './fs';
 import { streamFileDecoded } from './encoding';
@@ -174,6 +175,7 @@ export async function htmlExtractToFiles(
   tmpPrefix: string,
   options: ExtractOptions = {},
 ): Promise<void> {
+  await fs.promises.mkdir(path.dirname(tmpPrefix), { recursive: true });
   const htmlStream = streamFileDecoded(htmlPath, options.inputEncoding ?? null);
   const streams = Object.fromEntries(
     EXTRACT_SUFFIXES.map((suffix) => [

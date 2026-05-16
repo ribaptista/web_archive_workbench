@@ -1,5 +1,5 @@
 import { request as undiciRequest } from 'undici';
-import { type ProxyEntry } from './proxy';
+import { type AgentEntry } from './agents';
 import { IncomingHttpHeaders } from './types';
 
 const ABORT_CONTROLLER_TIMEOUT_MS = 40_000;
@@ -35,23 +35,23 @@ export class NetworkFetchError extends Error {
  * acquire() picks the least-loaded proxy and increments its ongoing counter.
  * release() decrements the ongoing counter when the request is done.
  */
-export class ProxyPool {
-  constructor(private readonly proxies: ProxyEntry[]) {}
+export class AgentPool {
+  constructor(private readonly agents: AgentEntry[]) {}
 
-  private acquire(): ProxyEntry {
-    const minOngoing = Math.min(...this.proxies.map((p) => p.ongoing));
-    const candidates = this.proxies.filter((p) => p.ongoing === minOngoing);
-    const proxy = candidates[Math.floor(Math.random() * candidates.length)];
-    proxy.ongoing++;
-    return proxy;
+  private acquire(): AgentEntry {
+    const minOngoing = Math.min(...this.agents.map((a) => a.ongoing));
+    const candidates = this.agents.filter((a) => a.ongoing === minOngoing);
+    const agent = candidates[Math.floor(Math.random() * candidates.length)];
+    agent.ongoing++;
+    return agent;
   }
 
-  private release(proxy: ProxyEntry): void {
-    proxy.ongoing--;
+  private release(agent: AgentEntry): void {
+    agent.ongoing--;
   }
 
   async fetch(url: string): Promise<RawResponse> {
-    const proxy = this.acquire();
+    const agent = this.acquire();
     const ac = new AbortController();
     const timeout = setTimeout(
       () => ac.abort(new Error('request timed out')),
@@ -61,7 +61,7 @@ export class ProxyPool {
     try {
       const { statusCode, headers, body } = await undiciRequest(url, {
         method: 'GET',
-        dispatcher: proxy.agent,
+        dispatcher: agent.agent,
         signal: ac.signal,
         headersTimeout: HEADER_TIMEOUT_MS,
         bodyTimeout: BODY_TIMEOUT_MS,
@@ -77,18 +77,18 @@ export class ProxyPool {
         body: Buffer.concat(chunks),
         metadata: {
           durationMs: Date.now() - fetchStart,
-          proxyAddress: proxy.address,
+          proxyAddress: agent.address,
         },
       };
     } catch (cause) {
       throw new NetworkFetchError(
         url,
-        { durationMs: Date.now() - fetchStart, proxyAddress: proxy.address },
+        { durationMs: Date.now() - fetchStart, proxyAddress: agent.address },
         cause,
       );
     } finally {
       clearTimeout(timeout);
-      this.release(proxy);
+      this.release(agent);
     }
   }
 }

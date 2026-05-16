@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { describe, it, expect } from 'vitest';
 import { downloadEntry } from './downloader';
-import { getAssetPath } from '../storage/id-path';
+import { buildAssetPath } from './paths';
 import {
   createMockPool,
   seedResourceVersion,
@@ -71,7 +71,7 @@ describe('downloadEntry – single request (no redirect)', () => {
     expect(ctx.testRepo.countRequestErrors(requestId)).toBe(0);
 
     const { body_digest: bodyDigest } = request;
-    const assetBase = getAssetPath(ctx.outputFolder, bodyDigest);
+    const assetBase = buildAssetPath(ctx.outputFolder, bodyDigest);
     expect(fs.existsSync(assetBase)).toBe(true);
     expect(fs.existsSync(assetBase + '.attrs')).toBe(true);
     expect(fs.existsSync(assetBase + '.text')).toBe(true);
@@ -139,7 +139,7 @@ describe('downloadEntry – single request (no redirect)', () => {
     expect(ctx.testRepo.countRequestErrors(requestId)).toBe(0);
 
     const { body_digest: bodyDigest } = request;
-    const assetBase = getAssetPath(ctx.outputFolder, bodyDigest);
+    const assetBase = buildAssetPath(ctx.outputFolder, bodyDigest);
     expect(fs.existsSync(assetBase)).toBe(true);
     expect(fs.existsSync(assetBase + '.attrs')).toBe(false);
     expect(fs.existsSync(assetBase + '.text')).toBe(false);

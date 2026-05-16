@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import Database from 'better-sqlite3';
-import { nestedIdPath } from '../src/storage/id-path';
+import { buildAssetPath } from '../src/request/paths';
 import { htmlExtractToFiles } from '../src/storage/html';
 import type { ExtractOptions } from '../src/storage/html';
 
@@ -20,7 +20,6 @@ interface RequestRow {
   encoding: string | null;
 }
 
-const assetsDir = path.join(path.resolve(basePath), 'assets');
 const SUFFIXES = ['.attrs', '.text', '.comments'] as const;
 const PAGE_SIZE = 500;
 
@@ -50,7 +49,7 @@ async function main() {
       }
       total++;
 
-      const prefix = nestedIdPath(assetsDir, row.body_digest, 2);
+      const prefix = buildAssetPath(path.resolve(basePath), row.body_digest);
       const htmlPath = prefix;
 
       if (!fs.existsSync(htmlPath)) {

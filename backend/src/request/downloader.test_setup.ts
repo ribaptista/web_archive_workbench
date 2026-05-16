@@ -10,7 +10,7 @@ import Bottleneck from 'bottleneck';
 import { RequestRepository } from './repository';
 import { CdxRepository } from '../cdx/repository';
 import { RunRepository } from '../run/repository';
-import { ProxyPool } from '../http/proxy_pool';
+import { AgentPool } from '../http/agent_pool';
 import { TestRepository } from './test-repository';
 
 const MIGRATIONS_FOLDER = path.join(__dirname, '../db/migrations');
@@ -32,7 +32,7 @@ export function createMockPool(
       headers: Record<string, string>;
     }
   >,
-): { pool: ProxyPool; mockAgent: MockAgent } {
+): { pool: AgentPool; mockAgent: MockAgent } {
   const mockAgent = new MockAgent();
   mockAgent.disableNetConnect();
   setGlobalDispatcher(mockAgent);
@@ -47,7 +47,7 @@ export function createMockPool(
       .reply(statusCode, body, { headers });
   }
 
-  const pool = new ProxyPool([
+  const pool = new AgentPool([
     { address: null, agent: mockAgent, limiter: new Bottleneck(), ongoing: 0 },
   ]);
 
@@ -76,7 +76,7 @@ export interface DownloaderTestContext {
   runId: string;
   outputFolder: string;
   mockAgent: MockAgent | undefined;
-  pool: ProxyPool | undefined;
+  pool: AgentPool | undefined;
 }
 
 export const domainName = 'example.com';

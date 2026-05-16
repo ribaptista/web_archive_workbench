@@ -7,7 +7,7 @@ export type EncodingSource = 'bom' | 'header' | 'meta' | 'chardet';
 export interface DetectedEncoding {
   encoding: string;
   source: EncodingSource;
-  chardetConfidence: number | undefined;
+  chardetConfidence: number | null;
 }
 
 // These regexes operate on latin1-decoded bytes and are not UTF-16/32 compatible.
@@ -53,7 +53,7 @@ function detectBom(html: Buffer): DetectedEncoding | undefined {
       return {
         encoding: 'UTF-32LE',
         source: 'bom',
-        chardetConfidence: undefined,
+        chardetConfidence: null,
       };
     if (
       html[0] === 0x00 &&
@@ -64,25 +64,25 @@ function detectBom(html: Buffer): DetectedEncoding | undefined {
       return {
         encoding: 'UTF-32BE',
         source: 'bom',
-        chardetConfidence: undefined,
+        chardetConfidence: null,
       };
   }
   if (html.length >= 3) {
     if (html[0] === 0xef && html[1] === 0xbb && html[2] === 0xbf)
-      return { encoding: 'UTF-8', source: 'bom', chardetConfidence: undefined };
+      return { encoding: 'UTF-8', source: 'bom', chardetConfidence: null };
   }
   if (html.length >= 2) {
     if (html[0] === 0xff && html[1] === 0xfe)
       return {
         encoding: 'UTF-16LE',
         source: 'bom',
-        chardetConfidence: undefined,
+        chardetConfidence: null,
       };
     if (html[0] === 0xfe && html[1] === 0xff)
       return {
         encoding: 'UTF-16BE',
         source: 'bom',
-        chardetConfidence: undefined,
+        chardetConfidence: null,
       };
   }
   return undefined;
@@ -93,10 +93,10 @@ function detectEncodingMetaChardet(html: Buffer): DetectedEncoding | undefined {
   const head = html.subarray(0, 4096).toString('latin1');
   const m1 = META_CHARSET_RE.exec(head);
   if (m1)
-    return { encoding: m1[1], source: 'meta', chardetConfidence: undefined };
+    return { encoding: m1[1], source: 'meta', chardetConfidence: null };
   const m2 = META_HTTP_EQUIV_RE.exec(head);
   if (m2)
-    return { encoding: m2[1], source: 'meta', chardetConfidence: undefined };
+    return { encoding: m2[1], source: 'meta', chardetConfidence: null };
 
   // chardet — strip scripts/styles from latin1, then analyse
   const latin1 = html.toString('latin1');
@@ -154,7 +154,7 @@ export function detectEncodingHttp(
   if (contentTypeHeader) {
     const m = CHARSET_IN_CT_RE.exec(contentTypeHeader);
     if (m)
-      return { encoding: m[2], source: 'header', chardetConfidence: undefined };
+      return { encoding: m[2], source: 'header', chardetConfidence: null };
   }
 
   return detectEncodingMetaChardet(html);

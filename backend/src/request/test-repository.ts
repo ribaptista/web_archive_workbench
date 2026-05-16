@@ -49,6 +49,17 @@ export class TestRepository {
       .get(url, timestamp);
   }
 
+  countRequestsForResourceVersion(url: string, timestamp: number): number {
+    return (
+      this.db
+        .prepare<
+          [string, number],
+          { n: number }
+        >(`SELECT COUNT(*) AS n FROM request WHERE resource_version_url = ? AND resource_version_timestamp = ?`)
+        .get(url, timestamp)?.n ?? 0
+    );
+  }
+
   countRequestErrors(requestId: string): number {
     return (
       this.db

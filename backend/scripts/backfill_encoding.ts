@@ -13,7 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
-import { nestedIdPath } from '../src/storage/id-path';
+import { buildAssetPath } from '../src/request/paths';
 import { detectEncoding } from '../src/storage/encoding';
 
 async function main() {
@@ -68,11 +68,7 @@ async function main() {
     if (rows.length === 0) break;
 
     for (const row of rows) {
-      const assetPath = nestedIdPath(
-        path.join(assetsFolder, 'assets'),
-        row.body_digest,
-        2,
-      );
+      const assetPath = buildAssetPath(assetsFolder, row.body_digest);
 
       let html: Buffer;
       try {

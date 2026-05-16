@@ -2,10 +2,10 @@ import { randomUUID } from 'crypto';
 import type { DB } from '../db/conn';
 import {
   NetworkFetchError,
-  ProxyPool,
+  AgentPool,
   RawResponse,
   RequestMetadata,
-} from '../http/proxy_pool';
+} from '../http/agent_pool';
 import { BodyParser } from '../http/body_parser';
 import { equalsOrSubdomain } from '../http/url';
 import { RedirectAwareClient } from '../http/redirect/redirect_client';
@@ -178,7 +178,7 @@ export async function downloadEntry(
   cdxRepo: CdxRepository,
   runRepo: RunRepository,
   task: DownloadTask,
-  pool: ProxyPool,
+  pool: AgentPool,
 ): Promise<boolean> {
   const { runId } = task;
   const replayServer = new ReplayServer(task.replayBaseUrl);

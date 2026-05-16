@@ -4,8 +4,7 @@ import { promisify } from 'util';
 import { gzip } from 'zlib';
 import { describe, it, expect } from 'vitest';
 import { downloadEntry } from './downloader';
-import { getAssetPath } from '../storage/id-path';
-import { nestedIdPath } from '../storage/id-path';
+import { buildAssetPath, buildGzipPath } from './paths';
 import {
   createMockPool,
   seedResourceVersion,
@@ -75,7 +74,7 @@ describe('downloadEntry – gzip', () => {
     expect(ctx.testRepo.countRequestErrors(requestId)).toBe(0);
 
     // Decompressed asset saved at assets path
-    const assetPath = getAssetPath(ctx.outputFolder, request.body_digest);
+    const assetPath = buildAssetPath(ctx.outputFolder, request.body_digest);
     expect(fs.existsSync(assetPath)).toBe(true);
     expect(fs.readFileSync(assetPath, 'utf-8')).toBe(htmlContent);
 
@@ -83,10 +82,11 @@ describe('downloadEntry – gzip', () => {
     expect(fs.existsSync(assetPath + '.text')).toBe(true);
 
     // Raw gzip file saved under raw_responses/<runId>/gzip/
-    const gzipFilePath = nestedIdPath(
-      path.join(ctx.outputFolder, 'raw_responses', ctx.runId, 'gzip'),
+    const gzipFilePath = buildGzipPath(
+      ctx.outputFolder,
+      ctx.runId,
       requestId,
-      2,
+      true,
     );
     expect(fs.existsSync(gzipFilePath)).toBe(true);
     expect(fs.readFileSync(gzipFilePath)).toEqual(gzippedBody);
@@ -146,10 +146,11 @@ describe('downloadEntry – gzip', () => {
     expect(fs.existsSync(path.join(ctx.outputFolder, 'assets'))).toBe(false);
 
     // Raw corrupted gzip saved under raw_responses/<runId>/gzip_failed/
-    const gzipFailedPath = nestedIdPath(
-      path.join(ctx.outputFolder, 'raw_responses', ctx.runId, 'gzip_failed'),
+    const gzipFailedPath = buildGzipPath(
+      ctx.outputFolder,
+      ctx.runId,
       requestId,
-      2,
+      false,
     );
     expect(fs.existsSync(gzipFailedPath)).toBe(true);
     expect(fs.readFileSync(gzipFailedPath)).toEqual(corruptedGzip);
