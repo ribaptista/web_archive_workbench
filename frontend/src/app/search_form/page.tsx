@@ -3,20 +3,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroupWithSelectAll } from "@/components/ToggleGroupWithSelectAll";
-
-interface Domain {
-  name: string;
-}
-
-interface Condition {
-  regex: string;
-  notRegexNearby: string;
-}
+import { ConditionGroup } from "./ConditionGroup";
+import { validateConditions } from "./validateConditions";
+import { createSearch, fetchDomains } from "@/lib/api";
+import type { Condition } from "./ConditionCard";
+import type { Domain } from "@/lib/api";
 
 export default function SearchFormPage() {
   const router = useRouter();
@@ -27,72 +20,24 @@ export default function SearchFormPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/domains/")
-      .then((r) => r.json())
-      .then((loaded: Domain[]) => {
+    fetchDomains()
+      .then((loaded) => {
         setDomains(loaded);
         setSelectedDomains(new Set(loaded.map((d) => d.name)));
       })
       .catch(() => {});
   }, []);
 
-  function addCondition() {
-    setConditions((prev) => [...prev, { regex: "", notRegexNearby: "" }]);
-  }
-
-  function removeCondition(i: number) {
-    setConditions((prev) => prev.filter((_, idx) => idx !== i));
-  }
-
-  function updateCondition(i: number, field: keyof Condition, value: string) {
-    setConditions((prev) =>
-      prev.map((c, idx) => (idx === i ? { ...c, [field]: value } : c))
-    );
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
-    // Validate regexes client-side
-    for (let i = 0; i < conditions.length; i++) {
-      const val = conditions[i].regex.trim();
-      if (!val) continue;
-      try {
-        new RegExp(val);
-      } catch {
-        setError(`Invalid regex at condition ${i + 1}`);
-        return;
-      }
-      const notVal = conditions[i].notRegexNearby.trim();
-      if (notVal) {
-        try {
-          new RegExp(notVal);
-        } catch {
-          setError(`Invalid not-nearby regex at condition ${i + 1}`);
-          return;
-        }
-      }
-    }
-
-    const body = new URLSearchParams();
-    for (const c of conditions) {
-      body.append("regex[]", c.regex);
-      body.append("not_regex_nearby[]", c.notRegexNearby);
-    }
-    for (const id of selectedDomains) {
-      body.append("cdx_file_id[]", id);
-    }
+    const validationError = validateConditions(conditions);
+    if (validationError) { setError(validationError); return; }
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/searches/", { method: "POST", body });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText }));
-        setError(err.error ?? "Server error");
-        return;
-      }
-      const data = await res.json();
+      const data = await createSearch({ conditions, domainIds: Array.from(selectedDomains) });
       router.push(`/search_results?search_id=${data.searchId}`);
     } catch (err) {
       setError((err as Error).message);
@@ -107,60 +52,7 @@ export default function SearchFormPage() {
       <h1 className="text-2xl font-bold mb-6">New Search</h1>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div>
-          <h2 className="text-base font-semibold mb-3">Conditions</h2>
-          <div className="space-y-2">
-            {conditions.map((c, i) => (
-              <Card key={i}>
-                <CardContent className="pt-4 space-y-3">
-                  <div>
-                    <Label className="text-xs text-muted-foreground mb-1 block">
-                      Regex (required)
-                    </Label>
-                    <Input
-                      name="regex[]"
-                      value={c.regex}
-                      onChange={(e) => updateCondition(i, "regex", e.target.value)}
-                      placeholder="e.g. foo\w+"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground mb-1 block">
-                      Not nearby (optional)
-                    </Label>
-                    <Input
-                      name="not_regex_nearby[]"
-                      value={c.notRegexNearby}
-                      onChange={(e) => updateCondition(i, "notRegexNearby", e.target.value)}
-                      placeholder="e.g. exclude"
-                    />
-                  </div>
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => removeCondition(i)}
-                      disabled={conditions.length === 1}
-                    >
-                      Remove condition
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="mt-2"
-            onClick={addCondition}
-          >
-            + Add condition
-          </Button>
-        </div>
+        <ConditionGroup value={conditions} onChange={setConditions} />
 
         <ToggleGroupWithSelectAll
           label="Domains"

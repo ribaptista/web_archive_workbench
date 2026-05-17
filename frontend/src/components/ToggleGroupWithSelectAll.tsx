@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 interface Item {
   id: string;
   label: string;
+  /** Optional second line shown beneath the label, dimmed. */
+  subtitle?: string;
 }
 
 interface ToggleGroupWithSelectAllProps {
@@ -73,11 +75,21 @@ export function ToggleGroupWithSelectAll({
               type="button"
               variant={isSelected ? "default" : "outline"}
               size="sm"
+              className={item.subtitle ? "h-auto py-1 flex flex-col items-start" : undefined}
               onClick={() => toggleItem(item.id)}
             >
-              {item.label}
-              {counts?.[item.id] !== undefined && (
-                <span className="ml-1 opacity-60 font-normal">({counts[item.id]})</span>
+              <span>
+                {item.label}
+                {counts?.[item.id] !== undefined && (
+                  <span className="ml-1 opacity-60 font-normal">({counts[item.id]})</span>
+                )}
+              </span>
+              {item.subtitle && (
+                <span
+                  className={`font-normal text-xs ${isSelected ? "text-primary-foreground/60" : "text-muted-foreground"}`}
+                >
+                  {item.subtitle}
+                </span>
               )}
             </Button>
           );

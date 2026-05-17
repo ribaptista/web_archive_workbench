@@ -4,33 +4,15 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useRef, useState, useCallback, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { ErrorMessage } from "@/components/ui/error-message";
-
-interface ErrorDetail {
-  error_code: string;
-  error_name: string;
-  error_message: string;
-}
-
-interface ErrorEntry {
-  url: string;
-  timestamp: number;
-  errors: ErrorDetail[];
-}
-
-interface ErrorsData {
-  domain: string;
-  entries: ErrorEntry[];
-  nextCursor: { url: string; timestamp: number } | null;
-}
-
-interface FilterOption {
-  error_code: string;
-  error_name: string;
-}
+import { Button } from "@/components/ui/button";
+import { ToggleGroupWithSelectAll } from "@/components/ToggleGroupWithSelectAll";
+import { DomainErrorList } from "./DomainErrorList";
+import type { ErrorEntry } from "./DomainErrorList";
+import { fetchDomainErrorFilters, fetchDomainErrors } from "@/lib/api";
+import type { FilterOption, ErrorCursor } from "@/lib/api";
 
 function DomainErrorsInner() {
   const router = useRouter();
@@ -54,7 +36,7 @@ function DomainErrorsInner() {
 
   // Infinite scroll state
   const [entries, setEntries] = useState<ErrorEntry[]>([]);
-  const [nextCursor, setNextCursor] = useState<{ url: string; timestamp: number } | null>(null);
+  const [nextCursor, setNextCursor] = useState<ErrorCursor | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,11 +45,7 @@ function DomainErrorsInner() {
   // Load filter options once; default local selections to "all" when no filter is in the URL
   useEffect(() => {
     if (!domain) return;
-    fetch(`/api/domains/error_filters?domain=${encodeURIComponent(domain)}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(r.statusText);
-        return r.json() as Promise<FilterOption[]>;
-      })
+    fetchDomainErrorFilters(domain)
       .then((opts) => {
         setFilterOptions(opts);
         const allCodes = [...new Set(opts.map((f) => f.error_code))];
@@ -75,24 +53,13 @@ function DomainErrorsInner() {
         if (appliedCodes.length === 0) setSelectedCodes(new Set(allCodes));
         if (appliedNames.length === 0) setSelectedNames(new Set(allNames));
       })
-      .catch(() => {/* non-fatal */});
+      .catch((e) => setError(e.message));
   }, [domain]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchPage = useCallback(
-    (cursor: { url: string; timestamp: number } | null, append: boolean) => {
-      const q = new URLSearchParams({ domain });
-      for (const code of appliedCodes) q.append("error_code[]", code);
-      for (const name of appliedNames) q.append("error_name[]", name);
-      if (cursor) {
-        q.set("cursor_url", cursor.url);
-        q.set("cursor_ts", String(cursor.timestamp));
-      }
+    (cursor: ErrorCursor | null, append: boolean) => {
       (append ? setLoadingMore : setLoading)(true);
-      fetch(`/api/domains/errors?${q}`)
-        .then((r) => {
-          if (!r.ok) throw new Error(r.statusText);
-          return r.json() as Promise<ErrorsData>;
-        })
+      fetchDomainErrors({ domain, errorCodes: appliedCodes, errorNames: appliedNames, cursor })
         .then((data) => {
           setEntries((prev) => (append ? [...prev, ...data.entries] : data.entries));
           setNextCursor(data.nextCursor);
@@ -139,8 +106,6 @@ function DomainErrorsInner() {
   // Distinct codes and names for filter pills
   const distinctCodes = [...new Set(filterOptions.map((f) => f.error_code))];
   const distinctNames = [...new Set(filterOptions.map((f) => f.error_name))];
-  const isCodeActive = (code: string) => selectedCodes.has(code);
-  const isNameActive = (name: string) => selectedNames.has(name);
 
   if (!domain) return <ErrorMessage message="Missing domain parameter" />;
   if (error) return <ErrorMessage message={error} />;
@@ -156,152 +121,25 @@ function DomainErrorsInner() {
         <Card className="mb-6">
           <CardHeader className="py-2 px-4 font-semibold text-sm">Filter Errors</CardHeader>
           <CardContent className="py-3 space-y-3">
-            {distinctCodes.length > 0 && (
-              <div>
-                <div className="flex items-baseline justify-between mb-1">
-                  <p className="text-xs font-semibold">Error Code</p>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="link"
-                      size="sm"
-                      className="h-auto p-0 text-xs"
-                      disabled={selectedCodes.size === distinctCodes.length}
-                      onClick={() => setSelectedCodes(new Set(distinctCodes))}
-                    >
-                      Select all
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="link"
-                      size="sm"
-                      className="h-auto p-0 text-xs"
-                      disabled={selectedCodes.size === 0}
-                      onClick={() => setSelectedCodes(new Set())}
-                    >
-                      Select none
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {distinctCodes.map((code) => (
-                    <Button
-                      key={code}
-                      type="button"
-                      variant={isCodeActive(code) ? "default" : "outline"}
-                      size="sm"
-                      onClick={() =>
-                        setSelectedCodes((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(code)) next.delete(code); else next.add(code);
-                          return next;
-                        })
-                      }
-                    >
-                      {code}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {distinctNames.length > 0 && (
-              <div>
-                <div className="flex items-baseline justify-between mb-1">
-                  <p className="text-xs font-semibold">Error Name</p>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="link"
-                      size="sm"
-                      className="h-auto p-0 text-xs"
-                      disabled={selectedNames.size === distinctNames.length}
-                      onClick={() => setSelectedNames(new Set(distinctNames))}
-                    >
-                      Select all
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="link"
-                      size="sm"
-                      className="h-auto p-0 text-xs"
-                      disabled={selectedNames.size === 0}
-                      onClick={() => setSelectedNames(new Set())}
-                    >
-                      Select none
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {distinctNames.map((name) => (
-                    <Button
-                      key={name}
-                      type="button"
-                      variant={isNameActive(name) ? "default" : "outline"}
-                      size="sm"
-                      onClick={() =>
-                        setSelectedNames((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(name)) next.delete(name); else next.add(name);
-                          return next;
-                        })
-                      }
-                    >
-                      {name || "(no name)"}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
-
+            <ToggleGroupWithSelectAll
+              label="Error Code"
+              items={distinctCodes.map((c) => ({ id: c, label: c }))}
+              selected={selectedCodes}
+              onChange={setSelectedCodes}
+            />
+            <ToggleGroupWithSelectAll
+              label="Error Name"
+              items={distinctNames.map((n) => ({ id: n, label: n || "(no name)" }))}
+              selected={selectedNames}
+              onChange={setSelectedNames}
+            />
             <Button size="sm" onClick={applyFilters}>Apply Filters</Button>
           </CardContent>
         </Card>
       )}
 
       {/* Results table */}
-      {entries.length === 0 ? (
-        <p className="text-muted-foreground">No errors found.</p>
-      ) : (
-        <div className="border rounded-md overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-muted text-muted-foreground">
-              <tr>
-                <th className="text-left px-3 py-2 font-semibold">URL</th>
-                <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Timestamp</th>
-                <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Error Code</th>
-                <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Error Name</th>
-                <th className="text-left px-3 py-2 font-semibold">Message</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {entries.map((entry) =>
-                entry.errors.map((e, ei) => (
-                  <tr key={`${entry.url}|${entry.timestamp}|${ei}`} className="hover:bg-muted/40">
-                    {ei === 0 ? (
-                      <>
-                        <td className="px-3 py-2 break-all max-w-xs align-top" rowSpan={entry.errors.length}>
-                          <span className="text-muted-foreground">{entry.url}</span>
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap font-mono text-xs" rowSpan={entry.errors.length}>
-                          {entry.timestamp}
-                        </td>
-                      </>
-                    ) : null}
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      <code className="text-xs text-destructive">{e.error_code}</code>
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs">{e.error_name || <span className="text-muted-foreground">—</span>}</td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground max-w-sm truncate" title={e.error_message}>
-                      {e.error_message}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DomainErrorList entries={entries} />
 
       {/* Sentinel for infinite scroll */}
       <div ref={sentinelRef} className="py-4 flex justify-center">

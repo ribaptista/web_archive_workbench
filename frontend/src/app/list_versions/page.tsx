@@ -3,51 +3,14 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useRef, useState, useCallback, Suspense } from "react";
-import React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Spinner } from "@/components/ui/spinner";
 import { ErrorMessage } from "@/components/ui/error-message";
-import { Badge } from "@/components/ui/badge";
-import { REPLAY_SERVER_URL } from "@/lib/config";
-import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbSeparator,
-  BreadcrumbPage,
-} from "@/components/ui/breadcrumb";
-
-interface Version {
-  url: string;
-  timestamp: number;
-  successful_request_id: string | null;
-  status: "pending" | "error" | "ok" | "redirect";
-  error_code: string | null;
-  error_message: string | null;
-  location_original: string | null;
-  location_timestamp: number | null;
-}
-
-interface BreadcrumbPart {
-  label: string;
-  path: string;
-  level: number;
-}
-
-interface ListVersionsData {
-  url: string;
-  versions: Version[];
-  nextCursor: number | null;
-  breadcrumbs: BreadcrumbPart[];
-}
-
-function statusBadge(status: string) {
-  if (status === "ok") return <Badge variant="default">ok</Badge>;
-  if (status === "redirect") return <Badge variant="secondary">redirect</Badge>;
-  if (status === "error") return <Badge variant="destructive">error</Badge>;
-  return <Badge variant="outline">pending</Badge>;
-}
+import { PathBreadcrumb } from "@/components/PathBreadcrumb";
+import type { BreadcrumbPart } from "@/components/PathBreadcrumb";
+import { VersionRow } from "./VersionRow";
+import { fetchListVersions } from "@/lib/api";
+import type { Version, ListVersionsData } from "@/lib/api";
 
 function ListVersionsInner() {
   const router = useRouter();
@@ -64,14 +27,8 @@ function ListVersionsInner() {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const fetchPage = useCallback((cursor: number | null, append: boolean) => {
-    const q = new URLSearchParams(originalUrl ? { originalUrl } : { url });
-    if (cursor !== null) q.set("cursor", String(cursor));
     (append ? setLoadingMore : setLoading)(true);
-    fetch(`/api/list_versions?${q}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(r.statusText);
-        return r.json() as Promise<ListVersionsData>;
-      })
+    fetchListVersions({ url, originalUrl: originalUrl ?? undefined, cursor })
       .then((data) => {
         if (!append) setBreadcrumbs(data.breadcrumbs);
         setVersions((prev) => append ? [...prev, ...data.versions] : data.versions);
@@ -107,32 +64,13 @@ function ListVersionsInner() {
 
   return (
     <div className="container max-w-5xl py-8 mx-auto px-4">
-      <Breadcrumb className="mb-4">
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink onClick={() => router.push("/resources")} className="cursor-pointer">
-              All domains
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          {breadcrumbs.map((crumb, i) => (
-            <React.Fragment key={crumb.path}>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                {i === breadcrumbs.length - 1 ? (
-                  <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
-                ) : (
-                  <BreadcrumbLink
-                    onClick={() => router.push(`/resources?path=${encodeURIComponent(crumb.path)}&level=${crumb.level}`)}
-                    className="cursor-pointer"
-                  >
-                    {crumb.label}
-                  </BreadcrumbLink>
-                )}
-              </BreadcrumbItem>
-            </React.Fragment>
-          ))}
-        </BreadcrumbList>
-      </Breadcrumb>
+      <PathBreadcrumb
+        className="mb-4"
+        crumbs={breadcrumbs}
+        rootLabel="All domains"
+        onRootClick={() => router.push("/resources")}
+        onCrumbClick={(path, level) => router.push(`/resources?path=${encodeURIComponent(path)}&level=${level}`)}
+      />
 
       <h1 className="text-xl font-bold mb-1">Versions</h1>
       <p className="text-muted-foreground text-sm mb-4 break-all">{url}</p>
@@ -141,57 +79,9 @@ function ListVersionsInner() {
         <p className="text-muted-foreground">No versions found.</p>
       ) : (
         <ul className="divide-y border rounded-md">
-          {versions.map((v) => {
-            const ts = String(v.timestamp);
-            return (
-              <li key={`${v.url}@${v.timestamp}`} className="flex items-center gap-2 px-4 py-2 text-sm flex-wrap">
-                {v.status === "ok" || v.status === "redirect" ? (
-                  <a
-                    className="text-primary hover:underline"
-                    href={`${REPLAY_SERVER_URL}/replay/${v.timestamp}/${v.url}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {ts}
-                  </a>
-                ) : (
-                  <span className="text-muted-foreground">{ts}</span>
-                )}
-
-                <span className="text-muted-foreground text-xs font-mono truncate max-w-xs" title={v.url}>{v.url}</span>
-
-                {statusBadge(v.status)}
-
-                {v.status === "redirect" && v.location_original && (
-                  <span className="text-muted-foreground text-xs">
-                    →{" "}
-                    <a
-                      className="hover:underline"
-                      href={`${REPLAY_SERVER_URL}/replay/${v.location_timestamp}/${v.location_original}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {v.location_original}
-                    </a>
-                  </span>
-                )}
-
-                {v.status === "error" && (
-                  <>
-                    {v.error_code && <code className="text-xs text-destructive">{v.error_code}</code>}
-                    {v.error_message && (
-                      <span
-                        className="text-muted-foreground text-xs truncate max-w-xs"
-                        title={v.error_message}
-                      >
-                        {v.error_message}
-                      </span>
-                    )}
-                  </>
-                )}
-              </li>
-            );
-          })}
+          {versions.map((v) => (
+            <VersionRow key={`${v.url}@${v.timestamp}`} v={v} />
+          ))}
         </ul>
       )}
 

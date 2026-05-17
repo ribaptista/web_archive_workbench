@@ -4,40 +4,14 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Toggle } from "@/components/ui/toggle";
-import { FileResultCard, DynamicIcon } from "@/components/FileResultCard";
-import type { ReactionType, MatchedCondition } from "@/components/FileResultCard";
+import { NumberedPagination } from "@/components/NumberedPagination";
+import { FileResultCard } from "@/components/FileResultCard";
 import { Spinner } from "@/components/ui/spinner";
 import { ErrorMessage } from "@/components/ui/error-message";
-
-interface ReactionsViewFile {
-  resource_version_url: string;
-  resource_version_timestamp: number;
-  request_id: string;
-}
-
-interface ReactionsViewData {
-  files: ReactionsViewFile[];
-  totalFiles: number;
-  totalPages: number;
-  currentPage: number;
-  reactionTypes: ReactionType[];
-  domains: { id: string; domain: string }[];
-  activeReactions: string[];
-  matchedConditions: Record<string, MatchedCondition[]>;
-}
-
-function getPageRange(current: number, total: number): number[] {
-  const half = 5;
-  let start = Math.max(1, current - half);
-  let end = Math.min(total, current + half);
-  if (end - start < 10) {
-    if (start === 1) end = Math.min(total, start + 10);
-    else if (end === total) start = Math.max(1, end - 10);
-  }
-  return Array.from({ length: end - start + 1 }, (_, i) => start + i);
-}
+import { ToggleGroupWithSelectAll } from "@/components/ToggleGroupWithSelectAll";
+import { ToggleIconGroup } from "@/components/ToggleIconGroup";
+import { fetchReactionsView, toggleReaction as apiToggleReaction } from "@/lib/api";
+import type { ReactionsViewData } from "@/lib/api";
 
 function ReactionsViewInner() {
   const router = useRouter();
@@ -54,17 +28,8 @@ function ReactionsViewInner() {
   const [localDomains, setLocalDomains] = useState<Set<string>>(new Set(filterDomains));
 
   const load = useCallback(() => {
-    const q = new URLSearchParams({
-      reaction_type_id: String(reactionTypeId),
-      page: String(page),
-    });
-    for (const d of filterDomainsKey ? filterDomainsKey.split(",") : []) q.append("domain[]", d);
-    fetch(`/api/reactions/?${q}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(r.statusText);
-        return r.json();
-      })
-      .then((d: ReactionsViewData) => {
+    fetchReactionsView(reactionTypeId, page, filterDomainsKey ? filterDomainsKey.split(",") : [])
+      .then((d) => {
         setData(d);
         setActiveReactions(new Set(d.activeReactions));
         setLocalDomains(new Set(filterDomainsKey ? filterDomainsKey.split(",") : []));
@@ -77,13 +42,8 @@ function ReactionsViewInner() {
   async function toggleReaction(url: string, timestamp: number, rtId: number) {
     const key = `${url}|${timestamp}:${rtId}`;
     const isActive = activeReactions.has(key);
-    const res = await fetch("/api/reactions/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resource_version_url: url, resource_version_timestamp: timestamp, reaction_type_id: rtId, active: !isActive }),
-    });
-    if (!res.ok) return;
-    const result = await res.json();
+    const result = await apiToggleReaction(url, timestamp, rtId, !isActive).catch(() => null);
+    if (!result) return;
     setActiveReactions((prev) => {
       const next = new Set(prev);
       for (const rt of data?.reactionTypes ?? []) next.delete(`${url}|${timestamp}:${rt.id}`);
@@ -118,82 +78,39 @@ function ReactionsViewInner() {
       <h1 className="text-2xl font-bold mb-4">Reactions</h1>
 
       {/* Reaction type selector */}
-      {reactionTypes.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          {reactionTypes.map((rt) => {
-            const isSelected = rt.id === reactionTypeId;
-            return (
-              <Toggle
-                key={rt.id}
-                pressed={isSelected}
-                onPressedChange={() =>
-                  router.push(`/reactions_view?reaction_type_id=${rt.id}&page=1`)
-                }
-                size="sm"
-                className="aria-pressed:bg-primary/10 aria-pressed:text-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary"
-              >
-                <DynamicIcon name={rt.icon} active={isSelected} />
-                {rt.label}
-              </Toggle>
-            );
-          })}
-        </div>
-      )}
+      <div className="mb-4">
+        <ToggleIconGroup
+          items={reactionTypes.map((rt) => ({ id: rt.id, label: rt.label, icon: rt.icon }))}
+          selected={new Set([reactionTypeId])}
+          onChange={(next) => {
+            const added = [...next].find((id) => id !== reactionTypeId);
+            if (added != null) router.push(`/reactions_view?reaction_type_id=${added}&page=1`);
+          }}
+        />
+      </div>
 
       {/* Domain filter */}
-      {domains.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-6">
-          {domains.map((d) => {
-            const active = localDomains.size === 0 || localDomains.has(d.id);
-            return (
-              <Button
-                key={d.id}
-                variant={active ? "default" : "outline"}
-                size="sm"
-                onClick={() => {
-                  const allIds = new Set(domains.map((x) => x.id));
-                  const current = localDomains.size === 0 ? allIds : new Set(localDomains);
-                  if (current.has(d.id)) current.delete(d.id); else current.add(d.id);
-                  const isAll = domains.every((x) => current.has(x.id));
-                  const next = isAll ? new Set<string>() : current;
-                  setLocalDomains(next);
-                  applyDomainFilter(next);
-                }}
-              >
-                {d.domain}
-              </Button>
-            );
-          })}
-        </div>
-      )}
+      <div className="mb-6">
+        <ToggleGroupWithSelectAll
+          label="Domains"
+          items={domains.map((d) => ({ id: d.id, label: d.domain }))}
+          selected={localDomains}
+          onChange={(next) => { setLocalDomains(next); applyDomainFilter(next); }}
+        />
+      </div>
 
       <h2 className="text-base font-semibold mb-3">
         {totalFiles} result{totalFiles !== 1 ? "s" : ""}
       </h2>
 
       {/* Pagination top */}
-      {totalPages > 1 && (
-        <div className="flex flex-wrap gap-1 mb-3">
-          <Button
-            variant="outline" size="sm"
-            disabled={currentPage === 1}
-            onClick={() => router.push(buildPageUrl(currentPage - 1))}
-          >«</Button>
-          {getPageRange(currentPage, totalPages).map((p) => (
-            <Button
-              key={p}
-              variant={p === currentPage ? "default" : "outline"}
-              size="sm"
-              onClick={() => router.push(buildPageUrl(p))}
-            >{p}</Button>
-          ))}
-          <Button
-            variant="outline" size="sm"
-            disabled={currentPage === totalPages}
-            onClick={() => router.push(buildPageUrl(currentPage + 1))}
-          >»</Button>
-        </div>
-      )}
+      <NumberedPagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        buildPageUrl={buildPageUrl}
+        onNavigate={router.push}
+        className="mb-3"
+      />
 
       {data && files.length === 0 ? (
         <p className="text-muted-foreground">No reactions found.</p>
@@ -218,28 +135,13 @@ function ReactionsViewInner() {
       )}
 
       {/* Pagination bottom */}
-      {totalPages > 1 && (
-        <div className="flex flex-wrap gap-1 mt-3">
-          <Button
-            variant="outline" size="sm"
-            disabled={currentPage === 1}
-            onClick={() => router.push(buildPageUrl(currentPage - 1))}
-          >«</Button>
-          {getPageRange(currentPage, totalPages).map((p) => (
-            <Button
-              key={p}
-              variant={p === currentPage ? "default" : "outline"}
-              size="sm"
-              onClick={() => router.push(buildPageUrl(p))}
-            >{p}</Button>
-          ))}
-          <Button
-            variant="outline" size="sm"
-            disabled={currentPage === totalPages}
-            onClick={() => router.push(buildPageUrl(currentPage + 1))}
-          >»</Button>
-        </div>
-      )}
+      <NumberedPagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        buildPageUrl={buildPageUrl}
+        onNavigate={router.push}
+        className="mt-3"
+      />
     </div>
   );
 }
