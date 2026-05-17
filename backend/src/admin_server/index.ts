@@ -16,8 +16,9 @@ import { registerReactionRoutes } from './controllers/reactions';
 import { registerCdxRoutes } from './controllers/cdx';
 import { createSearchWorkerPool } from '../search/search_launcher';
 import { WorkerPool } from '../worker/worker_pool';
+import { ADMIN_BACKEND_PORT, APP_HOST } from '../config';
 
-const PORT = 5050;
+const PORT = ADMIN_BACKEND_PORT;
 
 function registerPoolShutdownHandlers(pool: WorkerPool): void {
   const terminate = () => pool.terminate();
@@ -106,8 +107,8 @@ async function main(): Promise<void> {
   });
   registerCdxRoutes(fastify, cdxRepo);
 
-  await fastify.listen({ port: PORT, host: '127.0.0.1' });
-  console.log(`Admin server listening on http://localhost:${PORT}`);
+  await fastify.listen({ port: PORT, host: APP_HOST });
+  console.log(`Admin server listening on http://${APP_HOST}:${PORT}`);
 }
 
 main().catch((err) => {

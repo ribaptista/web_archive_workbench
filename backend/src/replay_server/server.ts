@@ -6,9 +6,13 @@ import { openDatabase, DB_FILENAME } from '../db/conn';
 import { CdxRepository } from '../cdx/repository';
 import { registerReplayRoutes } from './controllers/replay';
 import { registerFromRefererRoutes } from './controllers/from_referer';
-import { registerLocalhostRewriteRoutes } from './controllers/localhost_rewrite';
-
-const PORT = 5051;
+import { registerAbsolutePathRewriteRoutes } from './controllers/localhost_rewrite';
+import {
+  APP_HOST,
+  REPLAY_SERVER_PORT,
+  REPLAY_SERVER_ORIGIN,
+  ADMIN_FRONTEND_ORIGIN,
+} from '../config';
 
 async function main() {
   const argv = yargs(hideBin(process.argv))
@@ -22,7 +26,7 @@ async function main() {
     .option('admin-url', {
       type: 'string',
       description: 'Base URL of the admin server',
-      default: 'http://localhost:3000',
+      default: ADMIN_FRONTEND_ORIGIN,
     })
     .parseSync();
 
@@ -33,7 +37,7 @@ async function main() {
   const db = openDatabase(dbPath);
   const cdxRepo = new CdxRepository(db);
 
-  const replayBaseUrl = `http://localhost:${PORT}`;
+  const replayBaseUrl = REPLAY_SERVER_ORIGIN;
 
   const fastify = Fastify({ logger: true });
   fastify.addHook('onSend', async (_req, reply) => {
@@ -47,10 +51,10 @@ async function main() {
     },
     { prefix: '/replay' },
   );
-  registerLocalhostRewriteRoutes(fastify, replayBaseUrl);
+  registerAbsolutePathRewriteRoutes(fastify, replayBaseUrl);
 
-  await fastify.listen({ port: PORT, host: '127.0.0.1' });
-  console.error(`Listening on http://localhost:${PORT}`);
+  await fastify.listen({ port: REPLAY_SERVER_PORT, host: APP_HOST });
+  console.error(`Listening on ${REPLAY_SERVER_ORIGIN}`);
 }
 
 main().catch((err) => {
