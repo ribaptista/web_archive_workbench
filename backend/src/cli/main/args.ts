@@ -6,14 +6,14 @@ import {
   DEFAULT_CDX_STRATEGY,
   DEFAULT_REPLAY_BASE_URL,
   type CdxServer,
-} from '../cdx/sync';
-import { type FetchPendingOptions } from '../cdx/repository';
+} from '../../cdx/sync';
+import type { LimiterOptions } from '../../http/agents';
+import { type FetchPendingOptions } from '../../cdx/repository';
 
 export type DownloadOptions = {
   dataFolder: string;
   proxyFile: string | undefined;
-  maxReqPerPeriod: number;
-  periodMs: number;
+  limiterOptions: LimiterOptions;
   concurrency: number;
 };
 
@@ -197,8 +197,10 @@ export function parseArgs(): CliArgs {
     downloadOptions: {
       dataFolder,
       proxyFile: argv['proxy-file'] as string | undefined,
-      maxReqPerPeriod,
-      periodMs,
+      limiterOptions: {
+        maxReqPerPeriod,
+        periodMs,
+      },
       concurrency: argv.concurrency as number,
     },
   };

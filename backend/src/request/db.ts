@@ -9,7 +9,7 @@ import {
 } from './downloader';
 import { BodyParser } from '../http/body_parser';
 import type { IncomingHttpHeaders } from '../http/types';
-import { RawResponse, RequestMetadata } from '../http/agent_pool';
+import { AgentPoolResponse, RequestMetadata } from '../http/agent_pool';
 import { type ContentType } from '../http/content_type';
 
 export interface InsertRequestTxParams {
@@ -22,7 +22,7 @@ export interface InsertRequestTxParams {
   domainName: string;
   urlOriginal: string;
   urlTimestamp: number;
-  response: RawResponse | undefined;
+  response: AgentPoolResponse | undefined;
   requestMetadata: RequestMetadata;
   redirectMetadata: RedirectResolution | undefined;
   bodyParser: BodyParser | undefined;
@@ -103,7 +103,7 @@ function buildAndInsertRequest(
   runId: string,
   urlOriginal: string,
   urlTimestamp: number,
-  response: RawResponse | undefined,
+  response: AgentPoolResponse | undefined,
   requestMetadata: RequestMetadata,
   isSuccessful: boolean,
   bodyParser: BodyParser | undefined,

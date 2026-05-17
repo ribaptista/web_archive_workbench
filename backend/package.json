@@ -5,8 +5,8 @@
   "main": "src/index.ts",
   "scripts": {
     "test": "vitest run",
-    "start": "ts-node src/index.ts",
-    "db:migrate": "tsx src/db/migrate.ts"
+    "start": "tsx src/cli/main/index.ts",
+    "add-resource-version": "tsx src/cli/add_resource_version/index.ts"
   },
   "author": "",
   "license": "ISC",

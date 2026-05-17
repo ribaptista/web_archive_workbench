@@ -32,7 +32,7 @@ export function registerLocalhostRewriteRoutes(
     const pathAndQuery = request.url;
     const rewritten = replayedOrigin + pathAndQuery;
     const redirectUrl = `${replayBaseUrl}/replay/${timestamp}/${rewritten}`;
-    console.error(
+    console.info(
       `[replay] 302 localhost rewrite: ${request.url} → ${redirectUrl}`,
     );
     return reply.redirect(redirectUrl, 302);

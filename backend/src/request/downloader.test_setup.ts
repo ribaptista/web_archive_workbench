@@ -47,9 +47,16 @@ export function createMockPool(
       .reply(statusCode, body, { headers });
   }
 
-  const pool = new AgentPool([
-    { address: null, agent: mockAgent, limiter: new Bottleneck(), ongoing: 0 },
-  ]);
+  const pool = new AgentPool({
+    agents: [
+      {
+        address: null,
+        agent: mockAgent,
+        limiter: new Bottleneck(),
+        ongoing: 0,
+      },
+    ],
+  });
 
   return { pool, mockAgent };
 }

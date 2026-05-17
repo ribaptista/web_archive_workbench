@@ -1,27 +1,33 @@
 import { request as undiciRequest } from 'undici';
-import { type AgentEntry } from './agents';
+import { loadAgents, type AgentEntry, type LimiterOptions } from './agents';
 import { IncomingHttpHeaders } from './types';
+
+export interface AgentPoolOptions {
+  proxyFile?: string;
+  limiterOptions?: Partial<LimiterOptions>;
+  agents?: AgentEntry[];
+}
 
 const ABORT_CONTROLLER_TIMEOUT_MS = 40_000;
 const HEADER_TIMEOUT_MS = 10_000;
 const BODY_TIMEOUT_MS = 20_000;
 
 export interface RequestMetadata {
+  url: string;
   durationMs: number;
   proxyAddress: string | null;
 }
 
-export interface RawResponse {
-  url: string;
+export type AgentPoolResponse = Response & { requestMetadata: RequestMetadata };
+
+interface Response {
   statusCode: number;
   headers: IncomingHttpHeaders;
   body: Buffer;
-  metadata: RequestMetadata;
 }
 
 export class NetworkFetchError extends Error {
   constructor(
-    public readonly url: string,
     public readonly requestMetadata: RequestMetadata,
     public readonly cause: unknown,
   ) {
@@ -36,10 +42,20 @@ export class NetworkFetchError extends Error {
  * release() decrements the ongoing counter when the request is done.
  */
 export class AgentPool {
-  constructor(private readonly agents: AgentEntry[]) {}
+  private readonly agents: AgentEntry[];
+
+  constructor(options: AgentPoolOptions = {}) {
+    this.agents = options.agents ?? loadAgents(options);
+    if (this.agents.length === 0) {
+      throw new Error('AgentPool requires at least one agent');
+    }
+  }
 
   private acquire(): AgentEntry {
-    const minOngoing = Math.min(...this.agents.map((a) => a.ongoing));
+    const minOngoing = this.agents.reduce(
+      (min, a) => Math.min(min, a.ongoing),
+      Infinity,
+    );
     const candidates = this.agents.filter((a) => a.ongoing === minOngoing);
     const agent = candidates[Math.floor(Math.random() * candidates.length)];
     agent.ongoing++;
@@ -50,8 +66,21 @@ export class AgentPool {
     agent.ongoing--;
   }
 
-  async fetch(url: string): Promise<RawResponse> {
+  async fetch(url: string): Promise<AgentPoolResponse> {
     const agent = this.acquire();
+    try {
+      return await agent.limiter.schedule(() =>
+        this.fetchImmediately(url, agent),
+      );
+    } finally {
+      this.release(agent);
+    }
+  }
+
+  private async fetchImmediately(
+    url: string,
+    agent: AgentEntry,
+  ): Promise<AgentPoolResponse> {
     const ac = new AbortController();
     const timeout = setTimeout(
       () => ac.abort(new Error('request timed out')),
@@ -59,36 +88,49 @@ export class AgentPool {
     );
     const fetchStart = Date.now();
     try {
-      const { statusCode, headers, body } = await undiciRequest(url, {
-        method: 'GET',
-        dispatcher: agent.agent,
-        signal: ac.signal,
-        headersTimeout: HEADER_TIMEOUT_MS,
-        bodyTimeout: BODY_TIMEOUT_MS,
-      });
-      const chunks: Buffer[] = [];
-      for await (const chunk of body as AsyncIterable<Buffer>) {
-        chunks.push(chunk);
-      }
+      const response = await this.request(url, agent, ac.signal);
       return {
-        url,
-        statusCode,
-        headers,
-        body: Buffer.concat(chunks),
-        metadata: {
+        ...response,
+        requestMetadata: {
+          url,
           durationMs: Date.now() - fetchStart,
           proxyAddress: agent.address,
         },
       };
     } catch (cause) {
       throw new NetworkFetchError(
-        url,
-        { durationMs: Date.now() - fetchStart, proxyAddress: agent.address },
+        {
+          url,
+          durationMs: Date.now() - fetchStart,
+          proxyAddress: agent.address,
+        },
         cause,
       );
     } finally {
       clearTimeout(timeout);
-      this.release(agent);
     }
+  }
+
+  private async request(
+    url: string,
+    agent: AgentEntry,
+    signal: AbortSignal,
+  ): Promise<Response> {
+    const {
+      statusCode,
+      headers,
+      body: bodyStream,
+    } = await undiciRequest(url, {
+      method: 'GET',
+      dispatcher: agent.agent,
+      signal,
+      headersTimeout: HEADER_TIMEOUT_MS,
+      bodyTimeout: BODY_TIMEOUT_MS,
+    });
+    const chunks: Buffer[] = [];
+    for await (const chunk of bodyStream as AsyncIterable<Buffer>) {
+      chunks.push(chunk);
+    }
+    return { statusCode, headers, body: Buffer.concat(chunks) };
   }
 }

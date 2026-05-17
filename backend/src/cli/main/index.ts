@@ -2,14 +2,14 @@ import path from 'path';
 import pLimit from 'p-limit';
 import { v4 as uuidv4 } from 'uuid';
 import { parseArgs, type DownloadOptions } from './args';
-import { openDatabase, DB_FILENAME } from '../db/conn';
-import { RunRepository } from '../run/repository';
+import { openDatabase, DB_FILENAME } from '../../db/conn';
+import { RunRepository } from '../../run/repository';
 import {
   CdxRepository,
   type PendingTaskCounts,
   type FetchPendingOptions,
-} from '../cdx/repository';
-import { RequestRepository } from '../request/repository';
+} from '../../cdx/repository';
+import { RequestRepository } from '../../request/repository';
 import {
   fetchCdxRows,
   insertCdxEntries,
@@ -19,11 +19,10 @@ import {
   type CdxQueryOptions,
   type CdxServer,
   type EvaluatedCdxEntry,
-} from '../cdx/sync';
-import { loadAgents } from '../http/agents';
-import { ProgressTracker } from './progress_tracker';
-import { AgentPool } from '../http/agent_pool';
-import { downloadEntry, type DownloadTask } from '../request/downloader';
+} from '../../cdx/sync';
+import { ProgressTracker } from '../progress_tracker';
+import { AgentPool } from '../../http/agent_pool';
+import { downloadEntry, type DownloadTask } from '../../request/downloader';
 
 import type { Database as DB } from 'better-sqlite3';
 
@@ -115,6 +114,8 @@ type RetryEntry = {
   normalized_name: string;
 };
 
+type IsSyncDone = () => boolean;
+
 function samplePendingEntries(
   cdxRepo: CdxRepository,
   domains: string[],
@@ -160,7 +161,7 @@ async function runRetryMode(
   output: string,
   replayBaseUrl: string,
   runId: string,
-  isSyncDone: () => boolean,
+  isSyncDone: IsSyncDone,
   runDownloads: (tasks: DownloadTask[]) => Promise<void>,
 ): Promise<void> {
   const outputFolder = output;
@@ -405,7 +406,7 @@ function handleCdxSync(
   runId: string,
   log: (msg: string) => void,
   onNewEntries: (count: number) => void,
-): () => boolean {
+): IsSyncDone {
   if (skipCdxSync) {
     return () => true;
   }
@@ -429,7 +430,7 @@ function handleCdxSync(
     })
     .catch((err) => {
       syncError = err;
-      syncDone = true;
+      throw err;
     });
   return () => {
     if (syncError) throw syncError;
@@ -471,13 +472,10 @@ async function runLiveRun(
   cdxServer: CdxServer,
   runId: string,
 ): Promise<void> {
-  const pool = new AgentPool(
-    loadAgents(
-      downloadOptions.proxyFile,
-      downloadOptions.maxReqPerPeriod,
-      downloadOptions.periodMs,
-    ),
-  );
+  const pool = new AgentPool({
+    proxyFile: downloadOptions.proxyFile,
+    limiterOptions: downloadOptions.limiterOptions,
+  });
   const limit = pLimit(downloadOptions.concurrency);
 
   const pendingTaskCounts = cdxRepo.countPendingTasks(

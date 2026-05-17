@@ -3,7 +3,7 @@ import type { DB } from '../db/conn';
 import {
   NetworkFetchError,
   AgentPool,
-  RawResponse,
+  AgentPoolResponse,
   RequestMetadata,
 } from '../http/agent_pool';
 import { BodyParser } from '../http/body_parser';
@@ -101,7 +101,7 @@ function resolveRedirect(
 }
 
 interface HopResult {
-  response: RawResponse;
+  response: AgentPoolResponse;
   bodyParser: BodyParser;
   contentType: ContentType;
   redirectMetadata: RedirectResolution | undefined;
@@ -205,7 +205,7 @@ export async function downloadEntry(
         currentUrl,
       );
       errors = hop.errors;
-      requestMetadata = hop.response.metadata;
+      requestMetadata = hop.response.requestMetadata;
     } catch (err) {
       if (!(err instanceof NetworkFetchError)) {
         throw err;

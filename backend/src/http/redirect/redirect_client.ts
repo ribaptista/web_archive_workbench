@@ -1,6 +1,6 @@
 import { RedirectChain } from './redirect_chain';
 import { RedirectError } from './types';
-import { AgentPool, type RawResponse } from '../agent_pool';
+import { AgentPool, type AgentPoolResponse } from '../agent_pool';
 import { resolveLocationHeader } from './header';
 
 export function isRedirect(status: number): boolean {
@@ -10,7 +10,7 @@ export function isRedirect(status: number): boolean {
 export class RedirectAwareClient {
   private readonly redirectChain = new RedirectChain();
   private nextUrl: string | undefined;
-  private lastResponse: RawResponse | undefined;
+  private lastResponse: AgentPoolResponse | undefined;
 
   constructor(
     initialUrl: string,
@@ -43,7 +43,11 @@ export class RedirectAwareClient {
         'RedirectAwareClient: no response to parse — fetchNext() must be called first',
       );
 
-    const { statusCode, headers, url } = this.lastResponse;
+    const {
+      statusCode,
+      headers,
+      requestMetadata: { url },
+    } = this.lastResponse;
 
     if (!isRedirect(statusCode)) {
       return;
@@ -54,7 +58,7 @@ export class RedirectAwareClient {
     this.nextUrl = resolvedLocation;
   }
 
-  async fetchNext(): Promise<RawResponse> {
+  async fetchNext(): Promise<AgentPoolResponse> {
     const err = this.canFollowRedirect();
     if (err) throw err;
 

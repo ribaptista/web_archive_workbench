@@ -52,19 +52,41 @@ export function getOrCreateCdxSource(
   return cdxRepo.findCdxSourceId(baseUrl);
 }
 
+export function ensureResourceVersionRegistered(
+  cdxRepo: CdxRepository,
+  original: string,
+  timestamp: number,
+  domainName: string,
+): boolean {
+  const normalizedOriginal = normalizeUrl(original).toString();
+  cdxRepo.insertTreeNodePaths([normalizedOriginal]);
+  cdxRepo.insertOrIgnoreResource(original, normalizedOriginal);
+  cdxRepo.insertOrIgnoreResourceVersion(original, timestamp);
+  const rvsr = cdxRepo.insertOrIgnoreResourceVersionSource(
+    original,
+    timestamp,
+    domainName,
+  );
+  if (rvsr.changes > 0) {
+    cdxRepo.incrementDomainEntryCount(domainName);
+    return true;
+  }
+  return false;
+}
+
 export function insertCdxEntries(
   db: DB,
   cdxRepo: CdxRepository,
   runRepo: RunRepository,
   runId: string,
-  cdxId: string,
+  domainName: string,
   cdxSourceId: number,
   entries: EvaluatedCdxEntry[],
 ): EvaluatedCdxEntry[] {
   const insertOne = db.transaction((entry: EvaluatedCdxEntry) => {
     const result = cdxRepo.insertOrIgnoreCdxEntry({
       runId,
-      domainName: cdxId,
+      domainName,
       line: entry.line,
       urlKey: entry.urlKey,
       timestamp: entry.timestamp,
@@ -80,18 +102,12 @@ export function insertCdxEntries(
     if (result.changes === 0) return false;
     runRepo.incrementNewEntryCount(runId);
     if (entry.isValid) {
-      const original = entry.original!;
-      const timestamp = entry.timestamp!;
-      const normalizedOriginal = normalizeUrl(original).toString();
-      cdxRepo.insertTreeNodePaths([normalizedOriginal]);
-      cdxRepo.insertOrIgnoreResource(original, normalizedOriginal);
-      cdxRepo.insertOrIgnoreResourceVersion(original, timestamp);
-      const rvsr = cdxRepo.insertOrIgnoreResourceVersionSource(
-        original,
-        timestamp,
-        cdxId,
+      ensureResourceVersionRegistered(
+        cdxRepo,
+        entry.original!,
+        entry.timestamp!,
+        domainName,
       );
-      if (rvsr.changes > 0) cdxRepo.incrementDomainEntryCount(cdxId);
     }
     return true;
   });

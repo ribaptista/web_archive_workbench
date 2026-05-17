@@ -36,7 +36,7 @@ export function registerFromRefererRoutes(
 
       const timestamp = refMatch[1];
       const redirectUrl = `${replayBaseUrl}/replay/${timestamp}/${original}`;
-      console.error(`[replay] 302 from_referer: ${original} → ${redirectUrl}`);
+      console.info(`[replay] 302 from_referer: ${original} → ${redirectUrl}`);
       return reply.redirect(redirectUrl, 302);
     },
   );

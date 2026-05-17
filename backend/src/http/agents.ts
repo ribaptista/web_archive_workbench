@@ -9,6 +9,16 @@ export interface AgentEntry {
   ongoing: number;
 }
 
+export interface AgentFactoryOptions {
+  proxyFile?: string;
+  limiterOptions?: Partial<LimiterOptions>;
+}
+
+export interface LimiterOptions {
+  maxReqPerPeriod: number;
+  periodMs: number;
+}
+
 const CONNECT_TIMEOUT_MS = 10_000;
 const KEEP_ALIVE_TIMEOUT_MS = 30_000;
 const KEEP_ALIVE_MAX_TIMEOUT_MS = 60_000;
@@ -25,38 +35,48 @@ function createLocalAgent(): Agent {
   });
 }
 
-export function loadAgents(
-  proxyFile: string | undefined,
-  maxReqPerPeriod: number,
-  periodMs: number,
-): AgentEntry[] {
-  const limiter = new Bottleneck({
+const DEFAULT_MAX_REQ_PER_PERIOD = 100;
+const DEFAULT_PERIOD_MS = 1_000;
+
+export function loadAgents({
+  proxyFile,
+  limiterOptions = {},
+}: AgentFactoryOptions = {}): AgentEntry[] {
+  if (!proxyFile) {
+    return [
+      {
+        address: null,
+        agent: createLocalAgent(),
+        limiter: createLimiter(limiterOptions),
+        ongoing: 0,
+      },
+    ];
+  }
+
+  return createProxyAgentsFromFile(proxyFile, limiterOptions);
+}
+
+function createLimiter({
+  maxReqPerPeriod = DEFAULT_MAX_REQ_PER_PERIOD,
+  periodMs = DEFAULT_PERIOD_MS,
+}: Partial<LimiterOptions> = {}): Bottleneck {
+  return new Bottleneck({
     reservoir: maxReqPerPeriod,
     reservoirRefreshAmount: maxReqPerPeriod,
     reservoirRefreshInterval: periodMs,
-    maxConcurrent: maxReqPerPeriod,
     minTime: Math.ceil(periodMs / maxReqPerPeriod),
   });
+}
 
-  if (!proxyFile) {
-    return [{ address: null, agent: createLocalAgent(), limiter, ongoing: 0 }];
-  }
-
+function createProxyAgentsFromFile(
+  proxyFile: string,
+  options: Partial<LimiterOptions>,
+): AgentEntry[] {
   const lines = parseProxyFile(proxyFile);
-
   return lines.map((addr) => ({
     address: addr,
     agent: createProxyAgent(addr),
-    limiter: limiter,
+    limiter: createLimiter(options),
     ongoing: 0,
   }));
-}
-
-/**
- * Pick the agent with lowest ongoing request count, breaking ties randomly.
- */
-export function pickAgent(agents: AgentEntry[]): AgentEntry {
-  const minOngoing = Math.min(...agents.map((a) => a.ongoing));
-  const candidates = agents.filter((a) => a.ongoing === minOngoing);
-  return candidates[Math.floor(Math.random() * candidates.length)];
 }
