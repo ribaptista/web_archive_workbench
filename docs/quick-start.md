@@ -40,7 +40,7 @@ followed by a `Complete.` line when there's nothing left to fetch.
 In **terminal 2**, from `backend/`:
 
 ```bash
-npx tsx src/admin_server/index.ts --data-folder ~/wab-data
+npm run admin-server -- --data-folder ~/wab-data
 ```
 
 **Expected output**: `Admin server listening on http://localhost:5050`.
@@ -50,7 +50,7 @@ npx tsx src/admin_server/index.ts --data-folder ~/wab-data
 In **terminal 3**, from `backend/`:
 
 ```bash
-npx tsx src/replay_server/server.ts --data-folder ~/wab-data
+npm run replay-server -- --data-folder ~/wab-data
 ```
 
 **Expected output**: `Listening on http://localhost:5051`.

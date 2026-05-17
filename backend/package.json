@@ -5,8 +5,10 @@
   "main": "src/index.ts",
   "scripts": {
     "test": "vitest run",
-    "start": "tsx src/cli/main/index.ts",
-    "add-resource-version": "tsx src/cli/add_resource_version/index.ts"
+    "start": "node -r ts-node/register src/cli/main/index.ts",
+    "admin-server": "node -r ts-node/register src/admin_server/index.ts",
+    "replay-server": "node -r ts-node/register src/replay_server/server.ts",
+    "add-resource-version": "node -r ts-node/register src/cli/add_resource_version/index.ts"
   },
   "author": "",
   "license": "ISC",

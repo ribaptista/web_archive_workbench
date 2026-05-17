@@ -158,12 +158,24 @@ export async function htmlStreamExtract(
     htmlStream.on('error', reject);
     htmlStream.on('end', () => {
       parser.end();
-      attributesStream.end();
-      textStream.end();
-      commentsStream.end();
       resolve();
     });
   });
+
+  await endStreams([attributesStream, textStream, commentsStream]);
+}
+
+function endStreams(streams: NodeJS.WritableStream[]): Promise<void[]> {
+  return Promise.all(
+    streams.map(
+      (s) =>
+        new Promise<void>((resolve, reject) => {
+          s.once('finish', () => resolve());
+          s.once('error', reject);
+          s.end();
+        }),
+    ),
+  );
 }
 
 const EXTRACT_SUFFIXES = ['.attrs', '.text', '.comments'] as const;

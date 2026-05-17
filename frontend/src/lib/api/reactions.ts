@@ -35,7 +35,7 @@ export interface ReactionsViewData {
   totalPages: number;
   currentPage: number;
   reactionTypes: ReactionType[];
-  domains: { id: string; domain: string }[];
+  domains: { domain_name: string }[];
   activeReactions: string[];
   matchedConditions: Record<string, MatchedCondition[]>;
 }

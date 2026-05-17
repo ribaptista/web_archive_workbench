@@ -23,7 +23,7 @@ flowchart LR
 From `backend/`:
 
 ```bash
-npx tsx src/replay_server/server.ts --data-folder /path/to/data
+npm run replay-server -- --data-folder /path/to/data
 ```
 
 **Expected output**: `Listening on http://localhost:5051`.

@@ -21,11 +21,22 @@ import { ADMIN_BACKEND_PORT, APP_HOST } from '../config';
 const PORT = ADMIN_BACKEND_PORT;
 
 function registerPoolShutdownHandlers(pool: WorkerPool): void {
-  const terminate = () => pool.terminate();
-  process.once('uncaughtException', terminate);
-  process.once('unhandledRejection', terminate);
-  process.once('SIGINT', terminate);
-  process.once('SIGTERM', terminate);
+  const terminateAndExit = (signal: string) => {
+    console.log(`[admin-server] received ${signal}, terminating worker pool`);
+    pool.terminate().finally(() => process.exit(0));
+  };
+  process.once('SIGINT', () => terminateAndExit('SIGINT'));
+  process.once('SIGTERM', () => terminateAndExit('SIGTERM'));
+
+  // Surface uncaught errors instead of silently killing the pool. These were
+  // previously bound to `pool.terminate()`, which masked the original cause
+  // (errors swallowed, requests then failing with "WorkerPool is terminated").
+  process.on('uncaughtException', (err) => {
+    console.error('[admin-server] uncaughtException:', err);
+  });
+  process.on('unhandledRejection', (reason) => {
+    console.error('[admin-server] unhandledRejection:', reason);
+  });
 }
 
 async function main(): Promise<void> {

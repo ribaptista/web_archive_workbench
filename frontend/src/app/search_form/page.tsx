@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { PageContainer } from '@/components/PageContainer';
-import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroupWithSelectAll } from '@/components/ToggleGroupWithSelectAll';
 import { ConditionGroup } from './ConditionGroup';
 import { validateConditions } from './validateConditions';
@@ -70,17 +69,6 @@ export default function SearchFormPage() {
           items={domains.map((d) => ({ id: d.name, label: d.name }))}
           selected={selectedDomains}
           onChange={setSelectedDomains}
-          renderItem={(item, isSelected, toggle) => (
-            <Toggle
-              key={item.id}
-              size="sm"
-              pressed={isSelected}
-              onPressedChange={toggle}
-              className="border border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-            >
-              {item.label}
-            </Toggle>
-          )}
         />
 
         {error && <p className="text-sm text-destructive">{error}</p>}

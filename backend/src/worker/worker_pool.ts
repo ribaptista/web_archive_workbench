@@ -21,7 +21,10 @@ export class WorkerPool {
     this.allWorkers = Array.from(
       { length: poolSize },
       () =>
-        new Worker(workerPath, { execArgv: [...process.execArgv], workerData }),
+        new Worker(workerPath, {
+          execArgv: [...process.execArgv],
+          workerData,
+        }),
     );
     this.freeWorkers = [...this.allWorkers];
   }

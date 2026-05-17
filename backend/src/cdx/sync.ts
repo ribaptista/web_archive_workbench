@@ -14,7 +14,10 @@ import type { ParsedCdxEntry } from './sync_strategy/cdx-parse-utils';
 export type { ParsedCdxEntry } from './sync_strategy/cdx-parse-utils';
 export { parseCdxRows } from './sync_strategy/cdx-strategy-wayback';
 
-async function fetchTextWithRetries(url: string): Promise<string> {
+async function fetchTextWithRetries(
+  url: string,
+  log: (msg: string) => void = console.log,
+): Promise<string> {
   for (let attempt = 1; ; attempt++) {
     const controller = new AbortController();
     const timeout = setTimeout(
@@ -28,8 +31,8 @@ async function fetchTextWithRetries(url: string): Promise<string> {
       }
       return await response.text();
     } catch (err) {
-      console.error(`CDX fetch attempt ${attempt} failed: ${err}`);
-      console.log(`Retrying in 10 seconds...`);
+      log(`CDX fetch attempt ${attempt} failed: ${err}`);
+      log(`Retrying in 10 seconds...`);
       await new Promise((resolve) => setTimeout(resolve, 10_000));
     } finally {
       clearTimeout(timeout);
@@ -176,9 +179,9 @@ export async function* fetchCdxRows(
 
   while (true) {
     const url = strategy.generateURL(cursor);
-    log(`Fetching CDX page ${page} from: ${url}`);
+    log(`[${domain}] Fetching CDX page ${page}`);
 
-    const text = await fetchTextWithRetries(url);
+    const text = await fetchTextWithRetries(url, log);
     const result = strategy.parseResult(text);
     const entries = strategy.parseEntries(result);
     yield entries.map((entry): EvaluatedCdxEntry => {

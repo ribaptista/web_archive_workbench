@@ -74,18 +74,23 @@ export default function SearchResultsPage() {
 
   function applyFilters(f: AppliedFilters) {
     resetCursor();
+    const nextUrl = searchResultsRoute({
+      searchId,
+      similarTo,
+      domains: f.domains,
+      conditionIds: f.conditionIds,
+      reactionTypeIds: f.reactionTypeIds,
+    });
+    const currentUrl = `${window.location.pathname}${window.location.search}`;
+    if (nextUrl === currentUrl) {
+      // URL didn't change — router.push would be a no-op; reload manually.
+      setFilterLoading(true);
+      reload();
+      return;
+    }
     setLoading(true);
     setFilterLoading(true);
-    router.push(
-      searchResultsRoute({
-        searchId,
-        similarTo,
-        domains: f.domains,
-        conditionIds: f.conditionIds,
-        reactionTypeIds: f.reactionTypeIds,
-      }),
-      { scroll: false },
-    );
+    router.push(nextUrl, { scroll: false });
   }
 
   function goNext() {

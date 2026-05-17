@@ -93,7 +93,7 @@ Heavy regex pipelines benefit from more workers. Restart the admin server
 with:
 
 ```bash
-npx tsx src/admin_server/index.ts -b ~/wab-data -s 4 -w 32 --context-size 96
+npm run admin-server -- -b ~/wab-data -s 4 -w 32 --context-size 96
 ```
 
 | Flag                | Effect                                   |

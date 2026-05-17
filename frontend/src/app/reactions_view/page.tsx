@@ -49,7 +49,9 @@ export default function ReactionsViewPage() {
         setData(d);
         setActiveReactions(new Set(d.activeReactions));
         setLocalDomains(
-          new Set(filterDomainsKey ? filterDomainsKey.split(',') : []),
+          filterDomainsKey
+            ? new Set(filterDomainsKey.split(','))
+            : new Set(d.domains.map((dom) => dom.domain_name)),
         );
       })
       .catch((e) => setError(e.message));
@@ -82,7 +84,7 @@ export default function ReactionsViewPage() {
   }
 
   function applyDomainFilter(newDomains: Set<string>) {
-    const allDomainIds = (data?.domains ?? []).map((d) => d.id);
+    const allDomainIds = (data?.domains ?? []).map((d) => d.domain_name);
     const domains = collapseIfAllSelected(newDomains, allDomainIds);
     router.push(reactionsViewRoute(reactionTypeId, 1, domains));
   }
@@ -130,7 +132,10 @@ export default function ReactionsViewPage() {
       <div className="mb-6">
         <ToggleGroupWithSelectAll
           label="Domains"
-          items={domains.map((d) => ({ id: d.id, label: d.domain }))}
+          items={domains.map((d) => ({
+            id: d.domain_name,
+            label: d.domain_name,
+          }))}
           selected={localDomains}
           onChange={(next) => {
             setLocalDomains(next);

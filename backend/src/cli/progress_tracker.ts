@@ -22,6 +22,7 @@ export class ProgressTracker {
           'Progress |{bar}| {value}/{total} | succeeded: {succeeded} | failed: {failed} | ETA: {eta_formatted}',
         clearOnComplete: false,
         hideCursor: true,
+        forceRedraw: true,
       },
       cliProgress.Presets.shades_classic,
     );
@@ -40,6 +41,7 @@ export class ProgressTracker {
 
   log(msg: string): void {
     this.multiBar.log(msg + '\n');
+    this.bar?.update({ succeeded: this.succeeded, failed: this.failed });
   }
 
   getStats(): ProgressStats {

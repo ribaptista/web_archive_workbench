@@ -185,7 +185,7 @@ export class ReactionRepository {
            WHERE rx.reaction_type_id = ?
            ${domainFragments.where}`,
         )
-        .get(...domainFragments.params, reactionTypeId)?.count ?? 0
+        .get(reactionTypeId, ...domainFragments.params)?.count ?? 0
     );
   }
 
@@ -214,7 +214,7 @@ export class ReactionRepository {
          ORDER BY rx.resource_version_timestamp DESC
          LIMIT ? OFFSET ?`,
       )
-      .all(...domainFragments.params, reactionTypeId, limit, offset);
+      .all(reactionTypeId, ...domainFragments.params, limit, offset);
   }
 
   findMatchedConditionsForFiles(

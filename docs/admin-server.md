@@ -10,7 +10,7 @@ reactions.
 From `backend/`:
 
 ```bash
-npx tsx src/admin_server/index.ts --data-folder /path/to/data
+npm run admin-server -- --data-folder /path/to/data
 ```
 
 **Expected output**: `Admin server listening on http://localhost:5050`.

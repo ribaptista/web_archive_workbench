@@ -34,6 +34,15 @@ const MENU_ID_REMOTE_REPLAY = 'open-remote-replay';
 /** Maps tabId -> remote live replay URL from x-remote-live-replay-url response header */
 const remoteLiveReplayUrlByTab = new Map();
 
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    // Clear any previously captured header when a new top-level navigation starts,
+    // so a stale value from a previous page isn't reused.
+    remoteLiveReplayUrlByTab.delete(details.tabId);
+  },
+  { urls: [`${REPLAY_SERVER_ORIGIN}/replay/*/*`], types: ['main_frame'] },
+);
+
 chrome.webRequest.onHeadersReceived.addListener(
   (details) => {
     const header = details.responseHeaders?.find(
@@ -43,7 +52,7 @@ chrome.webRequest.onHeadersReceived.addListener(
       remoteLiveReplayUrlByTab.set(details.tabId, header.value);
     }
   },
-  { urls: [`${REPLAY_SERVER_ORIGIN}/replay/*/*`] },
+  { urls: [`${REPLAY_SERVER_ORIGIN}/replay/*/*`], types: ['main_frame'] },
   ['responseHeaders'],
 );
 

@@ -46,11 +46,19 @@ const workerPath = path.join(
 );
 const pool = new WorkerPool(workerPath, maxWorkersData);
 
+// Terminate the nested file-search worker pool on shutdown signals only.
+// We deliberately do NOT bind to `uncaughtException` / `unhandledRejection`:
+// doing so previously masked the original error and caused subsequent calls
+// to fail with the misleading "WorkerPool is terminated".
 const terminatePool = () => pool.terminate();
-process.once('uncaughtException', terminatePool);
-process.once('unhandledRejection', terminatePool);
 process.once('SIGINT', terminatePool);
 process.once('SIGTERM', terminatePool);
+process.on('uncaughtException', (err) => {
+  console.error('[search-scan worker] uncaughtException:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[search-scan worker] unhandledRejection:', reason);
+});
 
 interface FileSearchResult {
   duration: number;

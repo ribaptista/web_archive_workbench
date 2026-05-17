@@ -1,6 +1,7 @@
-"use client";
+'use client';
 
-import { Button } from "@/components/ui/button";
+import React from 'react';
+import { Button } from '@/components/ui/button';
 
 interface Item {
   id: string;
@@ -15,7 +16,11 @@ interface ToggleGroupWithSelectAllProps {
   selected: Set<string>;
   onChange: (next: Set<string>) => void;
   counts?: Record<string, number>;
-  renderItem?: (item: Item, isSelected: boolean, toggle: () => void) => React.ReactNode;
+  renderItem?: (
+    item: Item,
+    isSelected: boolean,
+    toggle: () => void,
+  ) => React.ReactNode;
 }
 
 export function ToggleGroupWithSelectAll({
@@ -68,25 +73,36 @@ export function ToggleGroupWithSelectAll({
       <div className="flex flex-wrap gap-2">
         {items.map((item) => {
           const isSelected = selected.has(item.id);
-          if (renderItem) return renderItem(item, isSelected, () => toggleItem(item.id));
+          if (renderItem)
+            return (
+              <React.Fragment key={item.id}>
+                {renderItem(item, isSelected, () => toggleItem(item.id))}
+              </React.Fragment>
+            );
           return (
             <Button
               key={item.id}
               type="button"
-              variant={isSelected ? "default" : "outline"}
+              variant={isSelected ? 'default' : 'outline'}
               size="sm"
-              className={item.subtitle ? "h-auto py-1 flex flex-col items-start" : undefined}
+              className={
+                item.subtitle
+                  ? 'h-auto py-1 flex flex-col items-start'
+                  : undefined
+              }
               onClick={() => toggleItem(item.id)}
             >
               <span>
                 {item.label}
                 {counts?.[item.id] !== undefined && (
-                  <span className="ml-1 opacity-60 font-normal">({counts[item.id]})</span>
+                  <span className="ml-1 opacity-60 font-normal">
+                    ({counts[item.id]})
+                  </span>
                 )}
               </span>
               {item.subtitle && (
                 <span
-                  className={`font-normal text-xs ${isSelected ? "text-primary-foreground/60" : "text-muted-foreground"}`}
+                  className={`font-normal text-xs ${isSelected ? 'text-primary-foreground/60' : 'text-muted-foreground'}`}
                 >
                   {item.subtitle}
                 </span>
