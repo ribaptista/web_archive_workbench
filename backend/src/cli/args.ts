@@ -5,29 +5,34 @@ import {
   DEFAULT_CDX_BASE_URL,
   DEFAULT_CDX_STRATEGY,
   DEFAULT_REPLAY_BASE_URL,
+  type CdxServer,
 } from '../cdx/sync';
+import { type FetchPendingOptions } from '../cdx/repository';
+
+export type DownloadOptions = {
+  output: string;
+  proxyFile: string | undefined;
+  maxReqPerPeriod: number;
+  periodMs: number;
+  concurrency: number;
+};
 
 export interface CliArgs {
   domain: string[];
   all: boolean;
-  output: string;
   db: string;
   cdxPageSize: number;
-  proxyFile: string | undefined;
-  maxReqPerPeriod: number | undefined;
-  periodMs: number | undefined;
-  concurrency: number;
-  retryErrors: boolean;
-  skipErrors: string[];
-  skipErrorMessages: string[];
+  skipCdxSync: boolean;
   dryRun: boolean;
   verbose: boolean;
-  cdxBaseUrl: string;
-  cdxStrategy: 'json_wayback' | 'json_pywb';
-  replayBaseUrl: string;
+  cdxServer: CdxServer;
+  fetchPendingOptions: FetchPendingOptions;
+  downloadOptions: DownloadOptions;
 }
 
 const DEFAULT_CDX_PAGE_SIZE = 128;
+const ONE_SECOND = 1_000;
+const ONE_MINUTE_IN_MILLIS = 60 * ONE_SECOND;
 
 export function parseArgs(): CliArgs {
   const argv = yargs(hideBin(process.argv))
@@ -73,7 +78,7 @@ export function parseArgs(): CliArgs {
       description: 'Max concurrent requests',
       default: 5,
     })
-    .option('retry-errors', {
+    .option('skip-cdx-sync', {
       type: 'boolean',
       default: false,
       description:
@@ -127,9 +132,6 @@ export function parseArgs(): CliArgs {
       if (!args['all'] && domains.length === 0) {
         throw new Error('Either --domain or --all must be provided');
       }
-      const skipErrors = (args['skip-error'] as string[] | undefined) ?? [];
-      const skipErrorMessages =
-        (args['skip-error-message'] as string[] | undefined) ?? [];
       if (
         args['max-req-per-second'] !== undefined &&
         args['max-req-per-minute'] !== undefined
@@ -164,32 +166,41 @@ export function parseArgs(): CliArgs {
   const skipErrorMessages =
     (argv['skip-error-message'] as string[] | undefined) ?? [];
 
+  const periodMs =
+    argv['max-req-per-minute'] !== undefined
+      ? ONE_MINUTE_IN_MILLIS
+      : ONE_SECOND;
+
   const maxReqPerPeriod =
     argv['max-req-per-second'] !== undefined
       ? (argv['max-req-per-second'] as number)
       : argv['max-req-per-minute'] !== undefined
         ? (argv['max-req-per-minute'] as number)
-        : undefined;
-
-  const periodMs = argv['max-req-per-minute'] !== undefined ? 60_000 : 1_000;
+        : Math.ceil(periodMs / 1000); // Default to 1 req per second if not provided
 
   return {
     domain,
     all: argv.all as boolean,
-    output: path.resolve(argv.output as string),
     db: path.resolve(argv.db as string),
     cdxPageSize: argv['cdx-page-size'] as number,
-    proxyFile: argv['proxy-file'] as string | undefined,
-    maxReqPerPeriod,
-    periodMs: maxReqPerPeriod !== undefined ? periodMs : undefined,
-    concurrency: argv.concurrency as number,
-    retryErrors: argv['retry-errors'] as boolean,
-    skipErrors,
-    skipErrorMessages,
+    skipCdxSync: argv['skip-cdx-sync'] as boolean,
     dryRun: argv['dry-run'] as boolean,
     verbose: argv.v as boolean,
-    cdxBaseUrl: argv['cdx-base-url'] as string,
-    cdxStrategy: argv['cdx-strategy'] as 'json_wayback' | 'json_pywb',
-    replayBaseUrl: argv['replay-base-url'] as string,
+    cdxServer: {
+      baseUrl: argv['cdx-base-url'] as string,
+      strategy: argv['cdx-strategy'] as 'json_wayback' | 'json_pywb',
+      replayBaseUrl: argv['replay-base-url'] as string,
+    },
+    fetchPendingOptions: {
+      skipErrors,
+      skipErrorMessages,
+    },
+    downloadOptions: {
+      output: path.resolve(argv.output as string),
+      proxyFile: argv['proxy-file'] as string | undefined,
+      maxReqPerPeriod,
+      periodMs,
+      concurrency: argv.concurrency as number,
+    },
   };
 }

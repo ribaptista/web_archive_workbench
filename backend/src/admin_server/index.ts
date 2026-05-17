@@ -13,8 +13,18 @@ import { registerRunRoutes } from './controllers/run';
 import { registerSearchRoutes } from './controllers/search';
 import { registerReactionRoutes } from './controllers/reactions';
 import { registerCdxRoutes } from './controllers/cdx';
+import { createSearchWorkerPool } from '../search/search_launcher';
+import { WorkerPool } from '../worker/worker_pool';
 
 const PORT = 5050;
+
+function registerPoolShutdownHandlers(pool: WorkerPool): void {
+  const terminate = () => pool.terminate();
+  process.once('uncaughtException', terminate);
+  process.once('unhandledRejection', terminate);
+  process.once('SIGINT', terminate);
+  process.once('SIGTERM', terminate);
+}
 
 async function main(): Promise<void> {
   const argv = yargs(hideBin(process.argv))
@@ -29,10 +39,16 @@ async function main(): Promise<void> {
       description: 'Base folder containing domain asset directories',
       demandOption: true,
     })
-    .option('max-workers', {
+    .option('max-concurrent-searches', {
+      alias: 's',
+      type: 'number',
+      description: 'Number of searches that can run concurrently',
+      default: 2,
+    })
+    .option('max-file-workers-per-search', {
       alias: 'w',
       type: 'number',
-      description: 'Number of parallel worker threads for file search',
+      description: 'Number of parallel file search worker threads per search',
       default: 16,
     })
     .option('context-size', {
@@ -44,7 +60,8 @@ async function main(): Promise<void> {
 
   const dbPath = argv.db;
   const baseFolder = argv['base-folder'];
-  const maxWorkers = argv['max-workers'];
+  const maxConcurrentSearches = argv['max-concurrent-searches'];
+  const maxFileWorkersPerSearch = argv['max-file-workers-per-search'];
   const contextSize = argv['context-size'];
 
   const db = openDatabase(dbPath);
@@ -53,6 +70,13 @@ async function main(): Promise<void> {
   const reqRepo = new RequestRepository(db);
   const searchRepo = new SearchRepository(db);
   const reactionRepo = new ReactionRepository(db);
+
+  const searchWorkerPool = createSearchWorkerPool(
+    dbPath,
+    maxConcurrentSearches,
+    maxFileWorkersPerSearch,
+  );
+  registerPoolShutdownHandlers(searchWorkerPool);
 
   const fastify = Fastify({ logger: true });
   await fastify.register(formbody);
@@ -65,12 +89,18 @@ async function main(): Promise<void> {
   });
   void fastify.register(
     (f) =>
-      registerSearchRoutes(f, searchRepo, cdxRepo, reqRepo, reactionRepo, {
-        dbPath: db.name,
-        baseFolder,
-        maxWorkers,
-        contextSize,
-      }),
+      registerSearchRoutes(
+        f,
+        searchRepo,
+        cdxRepo,
+        reqRepo,
+        reactionRepo,
+        searchWorkerPool,
+        {
+          baseFolder,
+          contextSize,
+        },
+      ),
     { prefix: '/api/searches' },
   );
   void fastify.register((f) => registerReactionRoutes(f, reactionRepo), {

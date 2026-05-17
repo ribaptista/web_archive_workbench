@@ -4,7 +4,10 @@ import {
   type SearchCondition,
   type FileMatches,
 } from './file_search';
-import { toWorkerError, type WorkerError } from '../../worker/worker_utils';
+import {
+  toPlainNonFatalWorkerError,
+  type PlainNonFatalWorkerError,
+} from '../../worker/error';
 
 export interface WorkerRequest {
   filePath: string;
@@ -13,9 +16,9 @@ export interface WorkerRequest {
 
 export type WorkerSuccess = FileMatches & { result: 'success' };
 
-export type WorkerResponse = WorkerSuccess | WorkerError;
+export type WorkerResponse = WorkerSuccess | PlainNonFatalWorkerError;
 
-export type { WorkerError };
+export type { PlainNonFatalWorkerError };
 
 if (!parentPort) throw new Error('Must be run as a Worker');
 
@@ -27,6 +30,8 @@ parentPort.on('message', (req: WorkerRequest) => {
       ...result,
     } satisfies WorkerResponse);
   } catch (err) {
-    parentPort!.postMessage(toWorkerError(err) satisfies WorkerResponse);
+    parentPort!.postMessage(
+      toPlainNonFatalWorkerError(err) satisfies WorkerResponse,
+    );
   }
 });

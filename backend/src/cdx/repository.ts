@@ -106,6 +106,16 @@ export interface PendingCountRow {
   n: number;
 }
 
+export type PendingTaskCounts = {
+  total: number;
+  byDomainId: Map<string, number>;
+};
+
+export type FetchPendingOptions = {
+  skipErrors?: string[];
+  skipErrorMessages?: string[];
+};
+
 export interface PendingEntryRow {
   url: string;
   timestamp: number;
@@ -544,10 +554,10 @@ export class CdxRepository {
 
   countPendingByDomains(params: {
     domainIds: string[];
-    skipErrors: string[];
-    skipErrorMessages: string[];
+    fetchPendingOptions?: FetchPendingOptions;
   }): PendingCountRow[] {
-    const { domainIds, skipErrors, skipErrorMessages } = params;
+    const { domainIds, fetchPendingOptions = {} } = params;
+    const { skipErrors = [], skipErrorMessages = [] } = fetchPendingOptions;
     if (domainIds.length === 0) return [];
     const domainPlaceholders = domainIds.map(() => '?').join(', ');
     const skipErrorExistsClause = buildSkipErrorClause(
@@ -568,13 +578,35 @@ export class CdxRepository {
       .all(...domainIds, ...skipParams);
   }
 
+  countPendingTasks(
+    domains: string[],
+    fetchPendingOptions: FetchPendingOptions = {},
+  ): PendingTaskCounts {
+    if (domains.length === 0) {
+      return { total: 0, byDomainId: new Map<string, number>() };
+    }
+    const { skipErrors = [], skipErrorMessages = [] } = fetchPendingOptions;
+    const rows = this.countPendingByDomains({
+      domainIds: domains,
+      fetchPendingOptions,
+    });
+    const byDomainId = new Map<string, number>();
+    for (const domainId of domains) byDomainId.set(domainId, 0);
+    let total = 0;
+    for (const row of rows) {
+      byDomainId.set(row.domain_name, row.n);
+      total += row.n;
+    }
+    return { total, byDomainId };
+  }
+
   samplePendingEntries(params: {
     domainId: string;
-    skipErrors: string[];
-    skipErrorMessages: string[];
+    fetchPendingOptions?: FetchPendingOptions;
     limit: number;
   }): PendingEntryRow[] {
-    const { domainId, skipErrors, skipErrorMessages, limit } = params;
+    const { domainId, fetchPendingOptions = {}, limit } = params;
+    const { skipErrors = [], skipErrorMessages = [] } = fetchPendingOptions;
     const skipErrorExistsClause = buildSkipErrorClause(
       skipErrors,
       skipErrorMessages,
@@ -596,11 +628,11 @@ export class CdxRepository {
   findRetryTasksPage(params: {
     domainIds: string[];
     runId: string;
-    skipErrors: string[];
-    skipErrorMessages: string[];
+    fetchPendingOptions?: FetchPendingOptions;
     limit: number;
   }): RetryEntryRow[] {
-    const { domainIds, runId, skipErrors, skipErrorMessages, limit } = params;
+    const { domainIds, runId, fetchPendingOptions = {}, limit } = params;
+    const { skipErrors = [], skipErrorMessages = [] } = fetchPendingOptions;
     const domainPlaceholders = domainIds.map(() => '?').join(', ');
     const skipErrorExistsClause = buildSkipErrorClause(
       skipErrors,

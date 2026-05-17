@@ -3,30 +3,27 @@ import type { SearchRepository } from '../../search/repository';
 import type { CdxRepository } from '../../cdx/repository';
 import type { RequestRepository } from '../../request/repository';
 import type { ReactionRepository } from '../../reaction/repository';
-import {
-  runSearch,
-  type SearchConditionInput,
-} from '../../search/search_launcher';
+import { runSearch } from '../../search/search_launcher';
+import { WorkerPool } from '../../worker/worker_pool';
+import { type SearchConditionInput } from '../../search/types';
 import { getSearchResultsData } from '../../search/search_results';
 import { deleteSearch, getSearchesData } from '../../search/search';
 import { BadRequestError, toArray } from './common';
 
 export interface SearchControllerOptions {
-  dbPath: string;
   baseFolder: string;
-  maxWorkers: number;
   contextSize: number;
 }
 
 type RunSearchParams = {
   conditionInputs: SearchConditionInput[];
-  cdxFileIds: string[];
+  domainNames: string[];
 };
 
 function parseRunSearchBody(body: Record<string, unknown>): RunSearchParams {
   const regexList = toArray(body['regex[]']);
   const notRegexNearbyList = toArray(body['not_regex_nearby[]']);
-  const cdxFileIds = toArray(body['cdx_file_id[]']).filter(Boolean);
+  const domainNames = toArray(body['cdx_file_id[]']).filter(Boolean);
   const conditionInputs: SearchConditionInput[] = [];
   for (let i = 0; i < regexList.length; i++) {
     const regexStr = regexList[i].trim();
@@ -52,7 +49,7 @@ function parseRunSearchBody(body: Record<string, unknown>): RunSearchParams {
     }
     conditionInputs.push({ regex, notRegexNearby });
   }
-  return { conditionInputs, cdxFileIds };
+  return { conditionInputs, domainNames };
 }
 
 function parseSearchId(id: string): number {
@@ -98,9 +95,10 @@ export function registerSearchRoutes(
   cdxRepo: CdxRepository,
   reqRepo: RequestRepository,
   reactionRepo: ReactionRepository,
+  pool: WorkerPool,
   opts: SearchControllerOptions,
 ): void {
-  const { dbPath, baseFolder, maxWorkers, contextSize } = opts;
+  const { baseFolder, contextSize } = opts;
 
   fastify.post('/', async (request, reply) => {
     let parsed: RunSearchParams;
@@ -112,16 +110,13 @@ export function registerSearchRoutes(
       return reply.code(500).send({ error: 'Internal server error' });
     }
     const searchId = await runSearch(
+      pool,
       parsed.conditionInputs,
+      parsed.domainNames,
       searchRepo,
       cdxRepo,
-      {
-        dbPath,
-        baseFolder,
-        maxWorkers,
-        contextSize,
-        cdxFileIds: parsed.cdxFileIds,
-      },
+      baseFolder,
+      contextSize,
     );
     return reply.send({ searchId });
   });

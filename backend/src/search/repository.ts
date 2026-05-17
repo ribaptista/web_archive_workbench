@@ -1,4 +1,11 @@
 import type { Database as DB } from 'better-sqlite3';
+import type {
+  SearchCondition,
+  SearchConditionInput,
+  SearchMetadata,
+  FileMatch,
+  FileMatches,
+} from './types';
 
 // ── Search ────────────────────────────────────────────────────────────────────
 
@@ -241,6 +248,34 @@ export class SearchRepository {
     );
     this.db.transaction(() => {
       for (const name of domainNames) stmt.run(searchId, name);
+    })();
+  }
+
+  initSearch(
+    conditionInputs: SearchConditionInput[],
+    domainNames: string[],
+    total: number,
+    contextSize: number,
+  ): SearchMetadata {
+    return this.db.transaction(() => {
+      const searchId = this.insertSearch(total);
+      this.insertDomains(searchId, domainNames);
+      const conditions: SearchCondition[] = conditionInputs.map((input) => {
+        const notRegex = input.notRegexNearby?.source ?? null;
+        const id = this.insertCondition(
+          searchId,
+          input.regex.source,
+          notRegex,
+          contextSize,
+        );
+        return {
+          id,
+          regex: input.regex,
+          notRegexNearby: input.notRegexNearby ?? null,
+          contextSize,
+        };
+      });
+      return { searchId, domainNames, conditions };
     })();
   }
 
@@ -607,6 +642,48 @@ export class SearchRepository {
          VALUES (?, ?, ?, ?)`,
       )
       .run(searchFileId, conditionId, matchOffset, matchLength);
+  }
+
+  saveMatches(
+    searchId: number,
+    candidate: HtmlCandidateRow,
+    fileMatches: FileMatches,
+  ): void {
+    this.db.transaction(() => {
+      if (fileMatches.matches.length === 0) return;
+      const searchFileId = this.insertFile({
+        searchId,
+        requestId: candidate.request_id,
+        url: candidate.resource_version_url,
+        timestamp: candidate.resource_version_timestamp,
+        matchCount: fileMatches.matches.length,
+        contextDigest: fileMatches.contextDigest,
+      });
+      for (const m of fileMatches.matches) {
+        this.insertMatch({
+          searchFileId,
+          conditionId: m.conditionId,
+          matchOffset: m.matchOffset,
+          matchLength: m.matchLength,
+        });
+      }
+    })();
+  }
+
+  saveFileError(
+    searchId: number,
+    candidate: HtmlCandidateRow,
+    errorName: string,
+    errorMessage: string,
+  ): void {
+    this.insertFileError({
+      searchId,
+      requestId: candidate.request_id,
+      url: candidate.resource_version_url,
+      timestamp: candidate.resource_version_timestamp,
+      errorName,
+      errorMessage,
+    });
   }
 }
 

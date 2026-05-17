@@ -1,20 +1,10 @@
 import * as fs from 'fs';
 import { createHash } from 'crypto';
+import type { SearchCondition, FileMatch, FileMatches } from '../types';
+
+export type { SearchCondition, FileMatch, FileMatches };
 
 export const DIGEST_CONTEXT_LENGTH = 256;
-
-export interface SearchCondition {
-  id: number;
-  regex: RegExp;
-  notRegexNearby: RegExp | null;
-  contextSize: number;
-}
-
-export interface FileMatch {
-  conditionId: number;
-  matchOffset: number;
-  matchLength: number;
-}
 
 function matchCondition(
   content: string,
@@ -51,11 +41,6 @@ function matchCondition(
 
   return results;
 }
-
-export type FileMatches = {
-  matches: FileMatch[];
-  contextDigest: string;
-};
 
 export function getFileMatches(
   filePath: string,

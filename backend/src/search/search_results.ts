@@ -136,10 +136,6 @@ export function getSearchResultsData(
     ? filterReactionTypeIds
     : null;
 
-  const domainParams: string[] = activeDomainIds ?? [];
-  const conditionParams: number[] = activeConditionIds ?? [];
-  const reactionParams: number[] = activeReactionTypeIds ?? [];
-
   const hasCursor =
     cursorTimestamp !== undefined && cursorRequestId !== undefined;
 

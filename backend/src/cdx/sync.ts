@@ -37,12 +37,18 @@ async function fetchTextWithRetries(url: string): Promise<string> {
   }
 }
 
+export interface CdxServer {
+  baseUrl?: string;
+  strategy?: 'json_wayback' | 'json_pywb';
+  replayBaseUrl: string;
+}
+
 export function getOrCreateCdxSource(
   cdxRepo: CdxRepository,
-  baseUrl: string,
-  replayBaseUrl: string,
+  server: CdxServer,
 ): number {
-  cdxRepo.insertOrIgnoreCdxSource(baseUrl, replayBaseUrl);
+  const baseUrl = server.baseUrl ?? DEFAULT_CDX_BASE_URL;
+  cdxRepo.insertOrIgnoreCdxSource(baseUrl, server.replayBaseUrl);
   return cdxRepo.findCdxSourceId(baseUrl);
 }
 
@@ -125,14 +131,22 @@ export interface EvaluatedCdxEntry extends ParsedCdxEntry {
  * Fetches CDX rows for a domain and yields parsed entries page by page.
  * Delegates to the appropriate strategy (json_wayback or json_pywb).
  */
+export interface CdxQueryOptions {
+  baseUrl?: string;
+  strategy?: 'json_wayback' | 'json_pywb';
+  pageSize?: number;
+}
+
 export async function* fetchCdxRows(
   domain: string,
-  cdxPageSize: number,
+  options: CdxQueryOptions,
   log: (msg: string) => void = console.log,
-  cdxBaseUrl: string = DEFAULT_CDX_BASE_URL,
-  cdxStrategy: 'json_wayback' | 'json_pywb' = DEFAULT_CDX_STRATEGY,
-  replayBaseUrl: string = DEFAULT_REPLAY_BASE_URL,
 ): AsyncGenerator<EvaluatedCdxEntry[], void, void> {
+  const {
+    baseUrl: cdxBaseUrl = DEFAULT_CDX_BASE_URL,
+    strategy: cdxStrategy = DEFAULT_CDX_STRATEGY,
+    pageSize: cdxPageSize = 50,
+  } = options;
   const strategy =
     cdxStrategy === 'json_pywb'
       ? new PywbCdxStrategy(domain, cdxBaseUrl, cdxPageSize)
