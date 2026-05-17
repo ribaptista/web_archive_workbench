@@ -278,7 +278,7 @@ export const runErrorTypeStats = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
-// Admin / search tables (0001_admin_tables migration)
+// Admin / search tables (0001_search migration)
 // ---------------------------------------------------------------------------
 
 export const search = sqliteTable('search', {

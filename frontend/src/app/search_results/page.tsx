@@ -210,7 +210,7 @@ function SearchResultsInner() {
   async function toggleReaction(url: string, timestamp: number, reactionTypeId: number) {
     const key = `${url}|${timestamp}:${reactionTypeId}`;
     const isActive = activeReactions.has(key);
-    const res = await fetch("/reactions/", {
+    const res = await fetch("/api/reactions/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ resource_version_url: url, resource_version_timestamp: timestamp, reaction_type_id: reactionTypeId, active: !isActive }),

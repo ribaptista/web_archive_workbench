@@ -13,7 +13,14 @@
       "idx": 1,
       "version": "7",
       "when": 1747300001000,
-      "tag": "0001_admin_tables",
+      "tag": "0001_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1747300002000,
+      "tag": "0002_reactions",
       "breakpoints": true
     }
   ]

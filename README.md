@@ -1,413 +1,123 @@
-# Wayback Downloader
+# Wayback Machine Downloader
 
-A set of scripts to bulk-download websites from the [Internet Archive Wayback Machine](https://web.archive.org), inspect the results, and produce rendered snapshots.
+A self-hosted toolkit for **downloading, browsing, searching and curating**
+archived snapshots from the [Internet Archive's Wayback Machine](https://web.archive.org).
 
-## Disclaimer
-
-This project is intended to operate in good faith within the Internet Archive’s published guidelines for automated access.
-
-**If any aspect of this tool is found to be incompatible with those guidelines or causes unintended operational impact, the maintainer will review and take appropriate corrective action, including modification or removal of the repository if necessary.**
-
-This tool retrieves archived web data from the Internet Archive’s Wayback Machine using its official interfaces, including CDX index APIs and playback endpoints provided by the service.
-
-It does not use URL guessing, crawling circumvention techniques, proxy rotation, or any methods intended to bypass rate limits, access controls, or intended usage patterns. The design goal is to support transparent, research-oriented access consistent with the fair and responsible use of the Wayback Machine’s infrastructure.
-
-The tool may perform **bounded archival reconstruction on a per-domain basis**, meaning it can retrieve all available archived captures for a given domain when requested. This is done at low request rates, without concurrency amplification or retry-driven load patterns, and is intended to remain within typical research-scale usage as described in the Internet Archive’s published guidelines (including rate limiting, polite automation, and non-abusive access expectations).
-
-Users are expected to respect the Internet Archive's servers by following reasonable rate limits, concurrency limits, and non-abusive usage patterns. The tool includes conservative defaults and enforces hard caps on request rate and concurrency to help reduce load and encourage responsible use.
-
-All data retrieved through this tool is stored locally on the user’s machine. The authors of this project do not host, store, transmit, or control any downloaded content after retrieval. Users are solely responsible for managing, securing, and using locally stored data in compliance with applicable laws and regulations.
-
-All archived content remains the property of its respective copyright holders. This project does not grant any rights or licenses to third-party content accessed via the Wayback Machine.
-
-Users are responsible for ensuring their use of this tool and any retrieved data complies with applicable laws, copyright restrictions, and the Internet Archive’s terms of use.
-
-Not affiliated with or endorsed by the Internet Archive.
-
-## Downloading websites
-
-Start a bulk download by passing a list of domains:
-
-```sh
-npm start -- --domains \
-  example.com \
-  example.org \
-  example.net \
-  --output ../wayback \
-  --db ../wayback/wayback.db \
-  --max-req-per-second 1 \
-  --concurrency 100 \
-  --proxy-file ./proxies.txt
-```
-
-Downloaded files are stored under `--output` and indexed in the SQLite database specified by `--db`.
-
-> **Note: proxy instability after `NGHTTP2_INTERNAL_ERROR`**
-> When using a proxy from proxyscape.com, if a request fails with the upstream error `Stream closed with error code NGHTTP2_INTERNAL_ERROR`, subsequent requests through the same proxy — even to different upstream URLs — may immediately fail with `connect ECONNREFUSED`. The cause is unknown, but the proxy appears to need time to recover. In these cases, reducing the request rate (e.g. `--max-req-per-minute 1`) gives the proxy time to recover between requests.
+It combines a bulk downloader, a local replay server (so old pages render
+properly in your browser), and a web admin UI for regex search, tagging, and
+review.
 
 ---
 
-## Retrying errored entries
+## What it does
 
-After the first run, some URLs may have failed. To retry them, collect the `cdx_file` IDs from the database (table `cdx_file`, column `id`) and pass them to `--retry-errors`:
+- **Download** historical snapshots of one or more domains from the Wayback
+  Machine, with proxy rotation and rate limiting.
+- **Replay** archived pages locally with all assets rewritten to load from
+  your own copy — no internet required after download.
+- **Search** the entire archive with regular expressions and inspect matches
+  with context.
+- **Curate** findings with reactions ("Like", "Review later") and a
+  resource-tree browser.
 
-```sh
-npm start -- --retry-errors \
-  e57cb121-1f2a-428c-a7e9-045e69203fab \
-  db083a37-2e1a-4cc9-9231-c00cbcb37527 \
-  99b6b42e-9bb5-44de-accd-95035bf4916c \
-  --output ../wayback \
-  --db ../wayback/wayback.db \
-  --max-req-per-second 1 \
-  --concurrency 100 \
-  --proxy-file ./proxies.txt
+## Core concepts
+
+| Concept         | Meaning                                                                        |
+| --------------- | ------------------------------------------------------------------------------ |
+| **Data folder** | A single directory holding `archive.db` (SQLite) and downloaded asset files.   |
+| **Domain**      | A site you have downloaded (e.g. `example.com`).                               |
+| **Run**         | One invocation of the CLI. Tracks what was requested, downloaded, and errored. |
+| **Resource**    | A unique archived URL.                                                         |
+| **Version**     | A timestamped snapshot of a resource.                                          |
+| **Search**      | A set of regex conditions applied across stored HTML/text bodies.              |
+| **Reaction**    | A flag (Like / Review later) attached to a specific URL+timestamp.             |
+
+## Architecture (high-level)
+
+```
+                +----------------+
+                |  Wayback CDX   |
+                +--------+-------+
+                         |
+                         v
++--------+         +-----+------+         +-----------------+
+|  CLI   | ----->  |  archive.db | <----- |  Admin Server   |  (Fastify, :5050)
++--------+         |  + assets/  |        +--------+--------+
+                   +------+------+                 ^
+                          ^                        | HTTP / fetch
+                          |                        |
+                  +-------+--------+      +--------+--------+
+                  | Replay Server  | <--> |    Frontend     |  (Next.js, :3000)
+                  | (Fastify,5051) |      +-----------------+
+                  +-------+--------+               ^
+                          ^                        |
+                          | rewrites every         |
+                          | non-replay request     |
+                  +-------+--------+               |
+                  | Chrome Ext.    |---------------+
+                  +----------------+
 ```
 
-This retries every CDX entry from the provided CDX files for which no successfully completed request exists — i.e. entries with no row in the `request` table, or entries where every associated request has at least one row in `request_errors`.
+All four backend components share **one data folder** (database +
+downloaded files).
 
-To skip entries that previously failed with specific error codes (treating them as if they succeeded), use `--skip-error` (repeatable). To skip by a substring of the error message instead, use `--skip-error-message` (repeatable). Both flags can be combined:
+## Quick Start (5 minutes)
 
-```sh
-npm start -- --retry-errors \
-  e57cb121-1f2a-428c-a7e9-045e69203fab \
-  --output ../wayback \
-  --db ../wayback/wayback.db \
-  --max-req-per-second 1 \
-  --concurrency 100 \
-  --proxy-file ./proxies.txt \
-  --skip-error missing_original_headers \
-  --skip-error redirect_limit_exceeded \
-  --skip-error-message "timed out"
+Prerequisites: **Node.js 20+** and **Chrome/Chromium**.
+
+```bash
+# 1. Install dependencies
+cd backend  && npm install
+cd ../frontend && npm install
+
+# 2. Pick a data folder (will hold archive.db + downloaded files)
+export DATA=~/wayback-data
+mkdir -p "$DATA"
+
+# 3. Download a small domain (dry-run first to preview)
+cd ../backend
+npm start -- --data-folder "$DATA" --domain example.com --dry-run
+npm start -- --data-folder "$DATA" --domain example.com --max-req-per-second 1
+
+# 4. Start the servers (in separate terminals)
+npx tsx src/admin_server/index.ts  --data-folder "$DATA"
+npx tsx src/replay_server/server.ts --data-folder "$DATA"
+
+# 5. Start the frontend
+cd ../frontend && npm run dev
 ```
 
-Entries whose only errors all match at least one `--skip-error` code or `--skip-error-message` substring will not be retried.
-
-> **Note:** Entries that previously failed with errors such as `missing_original_headers` or `redirect_limit_exceeded` will likely fail again with the same error. Use `--skip-error` to exclude those known non-retryable codes.
-
-After each retry run, check the output summary for the number of newly succeeded entries. If at least one new entry succeeded, it is worth running the retry script again — some URLs time out on first attempts but eventually resolve. Others consistently time out and will never succeed regardless of retries.
-
----
-
-## Inspecting downloaded files
-
-Downloaded URLs are stored as symlinks pointing to content-addressed files in the `assets` directory. File browsers such as Finder do not handle symlink trees well. Use the `resolve-symlinks` script to produce a copy of the download tree with all symlinks replaced by their actual file contents:
-
-```sh
-npx ts-node src/resolve-symlinks.ts ../wayback ../wayback_resolved
-```
-
----
-
-## Searching through downloaded HTML files
-
-To find all files containing a search term (works with symlinks):
-
-```sh
-find -L ./wayback/<domain> \
-  -path ./wayback/<domain>/assets -prune -o \
-  -path ./wayback/<domain>/raw_responses -prune -o \
-  -type f -exec grep -ilE "<search_pattern>" {} + \
-  > results.txt
-```
-
-This produces a list of file paths, one per line, saved to `urls.txt`.
-
-> **Note:** `grep` matches one line at a time. If the desired string is split across multiple lines in the HTML source (e.g. a tag attribute wraps onto the next line), `grep` will not find it. In that case, use a tool that can match across lines, or pre-process the files to join lines before searching.
-
-> **Note:** When dealing with old webpages that may not be valid UTF-8, prefix the command with `LC_ALL=C` to prevent `grep` from failing on non-UTF-8 bytes. This is only safe when the search term consists of simple ASCII characters (`[a-zA-Z0-9]` and basic special characters):
->
-> ```sh
-> LC_ALL=C find -L ./wayback/<domain> \
->   -path ./wayback/<domain>/assets -prune -o \
->   -path ./wayback/<domain>/raw_responses -prune -o \
->   -type f -exec grep -ilE "<search_pattern>" {} + \
->   > results.txt
-> ```
->
-> If you pipe the result into a second `grep`, `LC_ALL=C` must be set for that invocation too — the inline assignment only applies to the command it prefixes, not to subsequent commands in the pipeline. The simplest fix is to export it first:
->
-> ```sh
-> export LC_ALL=C
-> find -L ./wayback/<domain> \
->   -path ./wayback/<domain>/assets -prune -o \
->   -path ./wayback/<domain>/raw_responses -prune -o \
->   -type f -exec grep -ilE "<search_pattern>" {} + \
->   | grep -iE "<another_term>" \
->   > results.txt
-> ```
-
----
-
-## Filtering paths by include/exclude terms
-
-Given a list of file paths, use `filter-paths` to keep only files that contain at least one line matching an include term but not an exclude term (case-insensitive). Terms with spaces or special characters are supported via quoted arguments.
-
-```sh
-cat urls.txt | npx ts-node src/filter-paths.ts --include "search term" --exclude "unwanted term" > filtered.txt
-```
-
-Options:
-
-- `--include` / `-i`: a file is kept if at least one line contains this term
-- `--exclude` / `-e`: lines that also contain this term are ignored
-- `--charset` / `-c`: character set to read files with (required)
-
-> **Note:** When working with old webpages, files may not be valid UTF-8. In that case, use `--charset latin1` to avoid decoding errors. This is only safe when the search term consists of simple ASCII characters (`[a-zA-Z0-9]` and basic special characters), as `toLowerCase()` matching for non-ASCII characters is unreliable under `latin1`:
->
-> ```sh
-> cat urls.txt | npx ts-node src/filter-paths.ts --charset latin1 --include "search term" --exclude "unwanted term" > filtered.txt
-> ```
-
----
-
-## Subtracting a known file list
-
-Given two filepath lists, use `subtract-paths` to output only entries from the pipe that are not present in a reference file. Comparison is based on the 43-character content digest embedded in each filename.
-
-```sh
-cat all.txt | npx ts-node src/subtract-paths.ts already-seen.txt > new-only.txt
-```
-
-Paths in the reference file that have no recognisable digest are reported to stderr and skipped.
-
----
-
-## Advanced search: deduplicating similar files
-
-The raw search results above may contain many near-duplicate pages. Use `grep-context` to reduce the list to only files with unique context around each match.
-
-For each file, the script finds all occurrences of the search term along with a 1024-character context window before and after it, concatenates all matches, and computes a SHA-256 digest. Only the first file per unique digest is kept.
-
-```sh
-cat urls.txt | npx ts-node src/grep-context.ts <search_pattern> > unique_contexts.txt
-```
-
----
-
-## Generating an HTML index for inspection
-
-Given a filepath list (e.g. `unique_contexts.txt`), use `dedup-html` to generate an HTML file with `file://` links to each file. The script also deduplicates the list, keeping only files with unique content digests (based on the `.{43}` digest embedded in their filenames).
-
-Output one filepath per line (default):
-
-```sh
-cat unique_contexts.txt | npx ts-node src/dedup-html.ts > selected.txt
-```
-
-Output an HTML file with clickable links:
-
-```sh
-cat unique_contexts.txt | npx ts-node src/dedup-html.ts --html > index.html
-```
-
-Sort the deduplicated list lexicographically before output (works with or without `--html`):
-
-```sh
-cat unique_contexts.txt | npx ts-node src/dedup-html.ts --sort > selected.txt
-cat unique_contexts.txt | npx ts-node src/dedup-html.ts --sort --html > index.html
-```
-
-Open `index.html` in a browser to browse the matching files directly from the filesystem.
-
----
-
-## Browsing pages via the Wayback Machine
-
-Use the `server` script to start a local web server that renders an HTML page with links to the original archived pages on the Wayback Machine. This is useful for viewing pages as they were fully rendered at the time of archiving.
-
-```sh
-npx ts-node src/server.ts \
-  --file-list selected.txt \
-  --db ../wayback/wayback.db \
-  --locale utf8
-```
-
-Then open [http://localhost:3000](http://localhost:3000) in your browser.
-
-Options:
-
-- `--file-list` / `-f`: path to the file list (required)
-- `--db` / `-d`: path to the SQLite database (required)
-- `--locale` / `-l`: character set used when reading files, e.g. `utf8` or `latin1` (required)
-- `--pattern` / `-p`: regular expression to search for in each file (repeatable, case-insensitive)
-
-When `--pattern` is supplied, the HTML page shows matching lines grouped under each pattern before the replay link:
-
-```sh
-npx ts-node src/server.ts \
-  --file-list selected.txt \
-  --db ../wayback/wayback.db \
-  --locale latin1 \
-  --pattern "search term" \
-  --pattern "\d{4}-\d{2}-\d{2}"
-```
-
-Each `<li>` in the rendered page contains a two-level match list — one item per pattern, with the matching lines nested beneath it — followed by the Wayback Machine replay link.
-
-> The server resolves each file's content digest against the database to retrieve the original URL and snapshot timestamp, and constructs the corresponding `https://web.archive.org/web/<timestamp>/<url>` replay link.
-
----
-
-## Downloading pages as MHTML
-
-Use the `mhtml-downloader` script to download fully rendered Wayback Machine pages and save them locally as MHTML (embedded web archive format). This uses a headless Chromium browser via Puppeteer.
-
-```sh
-npx ts-node src/mhtml-downloader.ts selected.txt ../wayback/wayback.db ./mhtml --concurrency 1
-```
-
-- Each page is saved as `<output-dir>/<encoded-original-url>_<timestamp>_<cdxEntryId>_<bodyDigest>.mhtml`
-- Already downloaded files are skipped automatically
-- Press `Ctrl+C` to stop gracefully — in-flight downloads will finish before the process exits
-- A summary of succeeded and failed downloads is printed at the end
-
-## Known issues
-
-X When replaying urls that originally returned 3xx + location: replay the redirect response instead of serving the page directly
-X `../wayback/locost.eng.br/http%3A/%2F/%2Fwww.locost.eng.br/%2Fvisuh/%2Ffotos/%2F_20060524022356_120_633720_Zm_txgsZSYohXhattZJfGIHOh-WA6aOP_n9j8aGi6As.html`
-X `http://localhost:3000/replay/20070830014542/http://www.valhalla.com.br:80/`
-X Clicking on a wayback url in url list triggers extension rewrite
-X Investigate why this page doesn't set the background image and why other requests fail
-X `http://localhost:3000/replay/20200806182043/http://www.valhalla.com.br/website/annihilator-for-the-demented/`
-X try again after refreshing index (see missing url below)
-
-- 20060911052119 http://www.novometal.com:80/thebandsarena/topbandasin.php?ilink=DewScented/DewScented.php&ibanda=Dew+Scented
-- 847476 - 20081028225352 http://www.hellionrecords.com:80/
-  redirets to another url -> 404
-  instead, show 200 versions of 847476
-
-## TODO
-
-- unused modules
-
-X pagination in cdx fetch
-X progress bar
-
-- download warc/revisit (missing required cdx entry fields)?
-- review indexes
-- show similar path/relaxed domain
-  - replay
-  - resource list
-- non-ascii chars in url
-  http://brasilmusicpress.com:80/clientes/sagitta/fotos-alta/DivulgaÐ·Ð³o%201.jpg
-  http://brasilmusicpress.com:80/clientes/sagitta/fotos-alta/DivulgaÐ·Ð³o%201_thumb.jpg
-- report outdated query result (more files arrived)
-  - refresh the search?
-  - order by download time?
-- stop/slow down on 429/503?
-
-- multibars -> one per domain?
-- run properties: finished cdx sync; finished downloads
-
-- add non wayback urls (whiplash?)
-- like button in resource list
-- new discovered: 100 | pending: 0 | downloaded: 99 | failed: 1
-
-* counts per domain (run) -> double counting because no request -> domain direct relationship?
-* clean up errors on success/latest error
-* retry pirilampus+borderline+(all others?)
-* delete roadcrew.com
-* delete search with 8K results - app becomes unresponsive (busy)
-* start search - few seconds delay
-* text-muted-foreground for counts?
-* Reactions page - slow
-  - add loading
-  - select all/none
-* follow foreign domains
-* AND (borderline + sorocaba)
-* date filter
-* encoding tag
-  - support xml mimetype + encoding declaration
-* on delete cascade -> messes up counts
-
-- on log -> progress bar disappears until it changes values?
-- fetch cdx messages
-- versions -> calendar view
-- standard page width
-
-- partial cdx (date range)
-
-- not in cdx json: https://web.archive.org/web/20260510023510im_/https://www.metalrevolution.net/blog/wp-content/uploads/2017/10/Pastore-album-2017.jpg
-  https://web.archive.org/web/20240518161219im_/https://roadiecrew.com/wp-content/uploads/3.jpg
-  pictures: https://web.archive.org/web/20240518161219/https://roadiecrew.com/pastore-santo-andre-sp-16-03-2018/
-- page width - reactions
-
-- Download additional domains
-  - from "press" page
-  - .com domain of a news website (roadiecrew.com?)
-- retry failed downloads (XII.jpg)
-- Refresh cdx index
-  X not found in db: `http://www.valhalla.com.br/website/wp-content/plugins/simple-responsive-slider/assets/css/responsiveslides.css?ver=4.7.18`
-  - run for all domains
-    X domain allow list:
-    X google fonts
-    X cdn (jquery?)
-    X show similar results
-- show 404s/errors in extension console
-  X sync
-- clean up errors from db
-- sanity check (db <-> filesystem)
-- detect indexes to be created (lookup for sync)
-
-- multiple successful requests for a cdx_entry? prevent
-  - handle concurrent download runs for same domain (race creating symlinks + setting successful_terminal_request_id)
-    X multithread search
-    X id -> uuid -> insert only after filesystem operations complete
-    X rockbrigade -> slow -> change queries to use fields current=true, is_successful_terminal
-- paginate cdx? microsoft.com
-  X https://web.archive.org/web/20040107080701id_/http://links.carcasse.com:80/out.php?id=399 redirects to https://web.archive.org/web/20040107080701id_/http://darksep.cjb.net/
-  X shouldn't be an issue \* mention in readme that searching inside carcasse.com will include these domains
-  X domain id instead of literal
-- pastore AND ricardo
-  X domain combobox instead of text - in new search and rearch results
-  X multiple buttons instead of combobox
-  X filter conditions in search results
-  X result order
-  X duplicate results: http://localhost:5050/search_results?search_id=7
-
-TODO
-
-- save mimetype in request table
-  X remove old cdx_id from cdx_entry table
-  X script to generate htmlparser stream from existing html files
-  X ndjson:
-  {type:a, n:"attr name", v:"value"}
-  {type:t, v:"value in latin1"}
-- change downloader to generate htmlparser stream for each downloaded html file
-  ~ support for scan strategies: htmlparser stream or plain text
-  - save strategy in search db row
-  - common
-    X filter only html mimetypes
-    - read text stream in moving windows (2KB)
-    - save window size to search parameters
-    - save match offset in match db row instead of literal match text
-      - match source type: attribute or text
-      - attribute case: attribute index
-      - text case: char offset
-    - match display in search results:
-      - attribute matches (as pills)
-      - text match
-        X highlight multiple occurrences inside snippet
-- Set both context_digest and body_digest in reaction
-
-* version (timestamp) selector overlay
-  - show error / 302 / ok / not downloaded / digest
-* https://www.metalrevolution.net/blog/2018/06/14/pastore-confira-lyric-video-da-musica-phoenix-rising/
-  broken chars?
-
-- search scan sql optimization
-
-- error spliting `/`: http://www.laudany.com.br/erros/404.htm?404;http:
-  http://localhost:5050/resources?path=http%3A%2F%2Fwww.laudany.com.br%2Ferros&level=1
-
-- access replay from resources
-- http://localhost:5050/list_versions?url=http%3A%2F%2Ferror.hostinger.eu%2F
-  redirecting to external?
-  X http://localhost:3000/replay/20181224103750/https://www.hostinger.com.br/free-eol?utm_source=fri&utm_medium=www&utm_campaign=free_eol
-  all pending?
-- http://localhost:5050/list_versions?url=http%3A%2F%2Flaudany.com.br%2Frobots.txt ->
-  20170722110655
-  redirect
-  → http://error.hostinger.eu/
-- http://localhost:3000/replay/20170923133637/http://error.hostinger.eu/ ->
-  redirects to live website -> not being rewritten?
+Then:
+
+1. Open **http://localhost:3000** — you should see the **New Search** page.
+2. Install the [Chrome extension](docs/chrome-extension.md).
+3. From the **Resources** page, drill into a domain and click any version
+   timestamp to view the archived page locally.
+
+For a guided walkthrough see **[docs/quick-start.md](docs/quick-start.md)**.
+
+## Documentation
+
+| Topic                                 | Doc                                                  |
+| ------------------------------------- | ---------------------------------------------------- |
+| Install Node, Chrome, the project     | [docs/installation.md](docs/installation.md)         |
+| Configuration & environment variables | [docs/configuration.md](docs/configuration.md)       |
+| 5-minute hands-on walkthrough         | [docs/quick-start.md](docs/quick-start.md)           |
+| CLI reference & download workflows    | [docs/cli.md](docs/cli.md)                           |
+| Admin server                          | [docs/admin-server.md](docs/admin-server.md)         |
+| Replay server                         | [docs/replay-server.md](docs/replay-server.md)       |
+| Chrome extension setup                | [docs/chrome-extension.md](docs/chrome-extension.md) |
+| Frontend pages & features             | [docs/frontend.md](docs/frontend.md)                 |
+| End-to-end workflows                  | [docs/common-workflows.md](docs/common-workflows.md) |
+| Troubleshooting by symptom            | [docs/troubleshooting.md](docs/troubleshooting.md)   |
+| FAQ                                   | [docs/faq.md](docs/faq.md)                           |
+
+## Default ports
+
+| Service       | URL                   |
+| ------------- | --------------------- |
+| Frontend      | http://localhost:3000 |
+| Admin server  | http://localhost:5050 |
+| Replay server | http://localhost:5051 |
+
+All three listen on `127.0.0.1` only.

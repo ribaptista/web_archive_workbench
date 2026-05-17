@@ -10,7 +10,7 @@ import {
 import { type FetchPendingOptions } from '../cdx/repository';
 
 export type DownloadOptions = {
-  output: string;
+  dataFolder: string;
   proxyFile: string | undefined;
   maxReqPerPeriod: number;
   periodMs: number;
@@ -20,7 +20,7 @@ export type DownloadOptions = {
 export interface CliArgs {
   domain: string[];
   all: boolean;
-  db: string;
+  dataFolder: string;
   cdxPageSize: number;
   skipCdxSync: boolean;
   dryRun: boolean;
@@ -46,15 +46,12 @@ export function parseArgs(): CliArgs {
       default: false,
       description: 'Process all domains present in cdx_file table',
     })
-    .option('output', {
+    .option('data-folder', {
+      alias: 'b',
       type: 'string',
-      description: 'Output folder location',
-      default: './output',
-    })
-    .option('db', {
-      type: 'string',
-      description: 'Path to SQLite database file',
-      default: './wayback.db',
+      description:
+        'Data folder for storing the archive database and downloaded assets',
+      demandOption: true,
     })
     .option('cdx-page-size', {
       type: 'number',
@@ -178,10 +175,12 @@ export function parseArgs(): CliArgs {
         ? (argv['max-req-per-minute'] as number)
         : Math.ceil(periodMs / 1000); // Default to 1 req per second if not provided
 
+  const dataFolder = path.resolve(argv['data-folder'] as string);
+
   return {
     domain,
     all: argv.all as boolean,
-    db: path.resolve(argv.db as string),
+    dataFolder,
     cdxPageSize: argv['cdx-page-size'] as number,
     skipCdxSync: argv['skip-cdx-sync'] as boolean,
     dryRun: argv['dry-run'] as boolean,
@@ -196,7 +195,7 @@ export function parseArgs(): CliArgs {
       skipErrorMessages,
     },
     downloadOptions: {
-      output: path.resolve(argv.output as string),
+      dataFolder,
       proxyFile: argv['proxy-file'] as string | undefined,
       maxReqPerPeriod,
       periodMs,

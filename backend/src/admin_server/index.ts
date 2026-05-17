@@ -1,8 +1,9 @@
+import path from 'path';
 import Fastify from 'fastify';
 import formbody from '@fastify/formbody';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
-import { openDatabase } from '../db/conn';
+import { openDatabase, DB_FILENAME } from '../db/conn';
 import { CdxRepository } from '../cdx/repository';
 import { RunRepository } from '../run/repository';
 import { RequestRepository } from '../request/repository';
@@ -28,15 +29,11 @@ function registerPoolShutdownHandlers(pool: WorkerPool): void {
 
 async function main(): Promise<void> {
   const argv = yargs(hideBin(process.argv))
-    .option('db', {
-      type: 'string',
-      description: 'Path to the SQLite database',
-      demandOption: true,
-    })
-    .option('base-folder', {
+    .option('data-folder', {
       alias: 'b',
       type: 'string',
-      description: 'Base folder containing domain asset directories',
+      description:
+        'Data folder containing the archive database and domain asset directories',
       demandOption: true,
     })
     .option('max-concurrent-searches', {
@@ -58,8 +55,9 @@ async function main(): Promise<void> {
     })
     .parseSync();
 
-  const dbPath = argv.db;
-  const baseFolder = argv['base-folder'];
+  const dataFolder = argv['data-folder'];
+  const dbPath = path.join(dataFolder, DB_FILENAME);
+  const baseFolder = dataFolder;
   const maxConcurrentSearches = argv['max-concurrent-searches'];
   const maxFileWorkersPerSearch = argv['max-file-workers-per-search'];
   const contextSize = argv['context-size'];
@@ -104,7 +102,7 @@ async function main(): Promise<void> {
     { prefix: '/api/searches' },
   );
   void fastify.register((f) => registerReactionRoutes(f, reactionRepo), {
-    prefix: '/reactions',
+    prefix: '/api/reactions',
   });
   registerCdxRoutes(fastify, cdxRepo);
 

@@ -1,7 +1,8 @@
+import path from 'path';
 import Fastify from 'fastify';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
-import { openDatabase } from '../db/conn';
+import { openDatabase, DB_FILENAME } from '../db/conn';
 import { CdxRepository } from '../cdx/repository';
 import { registerReplayRoutes } from './controllers/replay';
 import { registerFromRefererRoutes } from './controllers/from_referer';
@@ -11,16 +12,11 @@ const PORT = 5051;
 
 async function main() {
   const argv = yargs(hideBin(process.argv))
-    .option('db', {
-      alias: 'd',
-      type: 'string',
-      description: 'Path to the SQLite database',
-      demandOption: true,
-    })
-    .option('base-folder', {
+    .option('data-folder', {
       alias: 'b',
       type: 'string',
-      description: 'Base folder containing domain asset directories',
+      description:
+        'Data folder containing the archive database and domain asset directories',
       demandOption: true,
     })
     .option('admin-url', {
@@ -30,8 +26,9 @@ async function main() {
     })
     .parseSync();
 
-  const dbPath = argv.db;
-  const baseFolder = argv['base-folder'];
+  const dataFolder = argv['data-folder'];
+  const dbPath = path.join(dataFolder, DB_FILENAME);
+  const baseFolder = dataFolder;
 
   const db = openDatabase(dbPath);
   const cdxRepo = new CdxRepository(db);

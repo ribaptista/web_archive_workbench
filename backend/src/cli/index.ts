@@ -1,7 +1,8 @@
+import path from 'path';
 import pLimit from 'p-limit';
 import { v4 as uuidv4 } from 'uuid';
 import { parseArgs, type DownloadOptions } from './args';
-import { openDatabase } from '../db/conn';
+import { openDatabase, DB_FILENAME } from '../db/conn';
 import { RunRepository } from '../run/repository';
 import {
   CdxRepository,
@@ -522,7 +523,7 @@ async function runLiveRun(
     cdxRepo,
     domains,
     fetchPendingOptions,
-    downloadOptions.output,
+    downloadOptions.dataFolder,
     cdxServer.replayBaseUrl,
     runId,
     isSyncDone,
@@ -536,7 +537,7 @@ async function runLiveRun(
 
 async function main() {
   const args = parseArgs();
-  const db = openDatabase(args.db);
+  const db = openDatabase(path.join(args.dataFolder, DB_FILENAME));
 
   const runId = uuidv4();
   const cdxRepo = new CdxRepository(db);
