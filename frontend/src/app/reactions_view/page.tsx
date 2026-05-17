@@ -1,68 +1,96 @@
-"use client";
+'use client';
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState, useCallback } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { NumberedPagination } from "@/components/NumberedPagination";
-import { FileResultCard } from "@/components/FileResultCard";
-import { Spinner } from "@/components/ui/spinner";
-import { ErrorMessage } from "@/components/ui/error-message";
-import { ToggleGroupWithSelectAll } from "@/components/ToggleGroupWithSelectAll";
-import { ToggleIconGroup } from "@/components/ToggleIconGroup";
-import { fetchReactionsView, toggleReaction as apiToggleReaction } from "@/lib/api";
-import type { ReactionsViewData } from "@/lib/api";
+import { useEffect, useState, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { NumberedPagination } from '@/components/NumberedPagination';
+import { FileResultCard } from '@/components/FileResultCard';
+import { Spinner } from '@/components/ui/spinner';
+import { ErrorMessage } from '@/components/ui/error-message';
+import { ToggleGroupWithSelectAll } from '@/components/ToggleGroupWithSelectAll';
+import { ToggleIconGroup } from '@/components/ToggleIconGroup';
+import {
+  fetchReactionsView,
+  toggleReaction as apiToggleReaction,
+} from '@/lib/api';
+import { toast } from 'sonner';
+import { reactionsViewRoute } from '@/lib/routes';
+import { allSelected } from '@/lib/utils';
+import type { ReactionsViewData } from '@/lib/api';
 
 function ReactionsViewInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const reactionTypeId = Number(params.get("reaction_type_id") ?? "1");
-  const page = Number(params.get("page") ?? "1");
-  const filterDomains = params.getAll("domain[]");
+  const reactionTypeId = Number(params.get('reaction_type_id') ?? '1');
+  const page = Number(params.get('page') ?? '1');
+  const filterDomains = params.getAll('domain[]');
   // Stable string for use in dependency arrays — avoids infinite loop from new array refs
-  const filterDomainsKey = filterDomains.join(",");
+  const filterDomainsKey = filterDomains.join(',');
 
   const [data, setData] = useState<ReactionsViewData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeReactions, setActiveReactions] = useState<Set<string>>(new Set());
-  const [localDomains, setLocalDomains] = useState<Set<string>>(new Set(filterDomains));
+  const [activeReactions, setActiveReactions] = useState<Set<string>>(
+    new Set(),
+  );
+  const [localDomains, setLocalDomains] = useState<Set<string>>(
+    new Set(filterDomains),
+  );
 
   const load = useCallback(() => {
-    fetchReactionsView(reactionTypeId, page, filterDomainsKey ? filterDomainsKey.split(",") : [])
+    fetchReactionsView(
+      reactionTypeId,
+      page,
+      filterDomainsKey ? filterDomainsKey.split(',') : [],
+    )
       .then((d) => {
         setData(d);
         setActiveReactions(new Set(d.activeReactions));
-        setLocalDomains(new Set(filterDomainsKey ? filterDomainsKey.split(",") : []));
+        setLocalDomains(
+          new Set(filterDomainsKey ? filterDomainsKey.split(',') : []),
+        );
       })
       .catch((e) => setError(e.message));
   }, [reactionTypeId, page, filterDomainsKey]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   async function toggleReaction(url: string, timestamp: number, rtId: number) {
     const key = `${url}|${timestamp}:${rtId}`;
     const isActive = activeReactions.has(key);
-    const result = await apiToggleReaction(url, timestamp, rtId, !isActive).catch(() => null);
+    const result = await apiToggleReaction(
+      url,
+      timestamp,
+      rtId,
+      !isActive,
+    ).catch((e: Error) => {
+      toast.error(e.message ?? 'Failed to toggle reaction');
+      return null;
+    });
     if (!result) return;
     setActiveReactions((prev) => {
       const next = new Set(prev);
-      for (const rt of data?.reactionTypes ?? []) next.delete(`${url}|${timestamp}:${rt.id}`);
-      for (const id of result.activeReactionTypeIds) next.add(`${url}|${timestamp}:${id}`);
+      for (const rt of data?.reactionTypes ?? [])
+        next.delete(`${url}|${timestamp}:${rt.id}`);
+      for (const id of result.activeReactionTypeIds)
+        next.add(`${url}|${timestamp}:${id}`);
       return next;
     });
   }
 
   function applyDomainFilter(newDomains: Set<string>) {
-    const allDomains = data?.domains ?? [];
-    const allSelected = allDomains.every((d) => newDomains.has(d.id));
-    const u = new URLSearchParams({ reaction_type_id: String(reactionTypeId), page: "1" });
-    if (!allSelected) for (const id of newDomains) u.append("domain[]", id);
-    router.push(`/reactions_view?${u}`);
+    const allDomainIds = (data?.domains ?? []).map((d) => d.id);
+    const domains = allSelected(newDomains, allDomainIds)
+      ? new Set<string>()
+      : newDomains;
+    router.push(reactionsViewRoute(reactionTypeId, 1, domains));
   }
 
   function buildPageUrl(p: number) {
     const u = new URLSearchParams(params.toString());
-    u.set("page", String(p));
+    u.set('page', String(p));
     return `/reactions_view?${u}`;
   }
 
@@ -71,7 +99,12 @@ function ReactionsViewInner() {
 
   const reactionTypes = data?.reactionTypes ?? [];
   const domains = data?.domains ?? [];
-  const { files = [], totalFiles = 0, totalPages = 1, currentPage = 1 } = data ?? {};
+  const {
+    files = [],
+    totalFiles = 0,
+    totalPages = 1,
+    currentPage = 1,
+  } = data ?? {};
 
   return (
     <div className="container max-w-5xl py-8 mx-auto px-4">
@@ -80,11 +113,16 @@ function ReactionsViewInner() {
       {/* Reaction type selector */}
       <div className="mb-4">
         <ToggleIconGroup
-          items={reactionTypes.map((rt) => ({ id: rt.id, label: rt.label, icon: rt.icon }))}
+          items={reactionTypes.map((rt) => ({
+            id: rt.id,
+            label: rt.label,
+            icon: rt.icon,
+          }))}
           selected={new Set([reactionTypeId])}
           onChange={(next) => {
             const added = [...next].find((id) => id !== reactionTypeId);
-            if (added != null) router.push(`/reactions_view?reaction_type_id=${added}&page=1`);
+            if (added != null)
+              router.push(`/reactions_view?reaction_type_id=${added}&page=1`);
           }}
         />
       </div>
@@ -95,12 +133,15 @@ function ReactionsViewInner() {
           label="Domains"
           items={domains.map((d) => ({ id: d.id, label: d.domain }))}
           selected={localDomains}
-          onChange={(next) => { setLocalDomains(next); applyDomainFilter(next); }}
+          onChange={(next) => {
+            setLocalDomains(next);
+            applyDomainFilter(next);
+          }}
         />
       </div>
 
       <h2 className="text-base font-semibold mb-3">
-        {totalFiles} result{totalFiles !== 1 ? "s" : ""}
+        {totalFiles} result{totalFiles !== 1 ? 's' : ''}
       </h2>
 
       {/* Pagination top */}
