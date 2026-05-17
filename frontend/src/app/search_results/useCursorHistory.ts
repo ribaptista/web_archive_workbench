@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import type { ReadonlyURLSearchParams } from 'next/navigation';
-import type { Cursor } from './types';
+import type { Cursor } from '@/lib/api';
 
 /**
  * Maintains a Prev/Next stack of cursors for paginated results, seeded from

@@ -1,13 +1,14 @@
-"use client";
+'use client';
 
-import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { Spinner } from "@/components/ui/spinner";
-import { ErrorMessage } from "@/components/ui/error-message";
-import { Button } from "@/components/ui/button";
-import { fetchSearches, deleteSearch } from "@/lib/api";
-import type { Search, SearchesData } from "@/lib/api";
-import { SearchCard } from "./SearchCard";
+import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { Spinner } from '@/components/ui/spinner';
+import { PageContainer } from '@/components/PageContainer';
+import { ErrorMessage } from '@/components/ui/error-message';
+import { Button } from '@/components/ui/button';
+import { fetchSearches, deleteSearch } from '@/lib/api';
+import type { Search, SearchesData } from '@/lib/api';
+import { SearchCard } from './SearchCard';
 
 export default function SearchesPage() {
   const router = useRouter();
@@ -16,7 +17,9 @@ export default function SearchesPage() {
   const [autoRefresh, setAutoRefresh] = useState(false);
 
   const load = useCallback(() => {
-    fetchSearches().then(setData).catch((e) => setError(e.message));
+    fetchSearches()
+      .then(setData)
+      .catch((e) => setError(e.message));
   }, []);
 
   useEffect(() => {
@@ -39,7 +42,7 @@ export default function SearchesPage() {
   if (data === null) return <Spinner />;
 
   return (
-    <div className="container max-w-5xl py-8 mx-auto px-4">
+    <PageContainer>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">All Searches</h1>
         <div className="flex gap-2">
@@ -49,15 +52,15 @@ export default function SearchesPage() {
                 ↻ Refresh
               </Button>
               <Button
-                variant={autoRefresh ? "default" : "outline"}
+                variant={autoRefresh ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setAutoRefresh((v) => !v)}
               >
-                Auto Refresh: {autoRefresh ? "On" : "Off"}
+                Auto Refresh: {autoRefresh ? 'On' : 'Off'}
               </Button>
             </>
           )}
-          <Button size="sm" onClick={() => router.push("/search_form")}>
+          <Button size="sm" onClick={() => router.push('/search_form')}>
             + New Search
           </Button>
         </div>
@@ -71,6 +74,6 @@ export default function SearchesPage() {
           <SearchCard key={s.id} s={s} onDelete={handleDelete} />
         ))}
       </div>
-    </div>
+    </PageContainer>
   );
 }

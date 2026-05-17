@@ -1,8 +1,9 @@
-"use client";
+'use client';
 
-import { useRouter } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
-import type { TreeNode } from "@/lib/api";
+import { useRouter } from 'next/navigation';
+import { Badge } from '@/components/ui/badge';
+import { listVersionsRoute } from '@/lib/routes';
+import type { TreeNode } from '@/lib/api';
 
 interface LeafRowProps {
   path: string;
@@ -14,11 +15,13 @@ function LeafRow({ path }: LeafRowProps) {
     <>
       <button
         className="text-primary break-all text-left hover:underline"
-        onClick={() => router.push(`/list_versions?url=${encodeURIComponent(path)}`)}
+        onClick={() => router.push(listVersionsRoute(path))}
       >
         {path}
       </button>
-      <Badge variant="default" className="shrink-0">resource</Badge>
+      <Badge variant="default" className="shrink-0">
+        resource
+      </Badge>
     </>
   );
 }
@@ -51,7 +54,11 @@ export function ResourceRow({ node, onNavigate }: ResourceRowProps) {
       {node.is_leaf ? (
         <LeafRow path={node.path} />
       ) : (
-        <BranchRow path={node.path} level={node.level} onNavigate={onNavigate} />
+        <BranchRow
+          path={node.path}
+          level={node.level}
+          onNavigate={onNavigate}
+        />
       )}
     </li>
   );

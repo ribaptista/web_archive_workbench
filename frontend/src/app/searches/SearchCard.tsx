@@ -1,18 +1,13 @@
-"use client";
+'use client';
 
-import { useRouter } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import type { Search } from "@/lib/api";
-
-function StatusBadge({ status }: { status: string }) {
-  if (status === "done") return <Badge variant="default">done</Badge>;
-  if (status === "running") return <Badge>running</Badge>;
-  if (status === "error") return <Badge variant="destructive">error</Badge>;
-  return <Badge variant="secondary">{status}</Badge>;
-}
+import { useRouter } from 'next/navigation';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { StatusBadge } from '@/components/StatusBadge';
+import { searchResultsRoute } from '@/lib/routes';
+import type { Search } from '@/lib/api';
 
 interface Props {
   s: Search;
@@ -21,9 +16,10 @@ interface Props {
 
 export function SearchCard({ s, onDelete }: Props) {
   const router = useRouter();
-  const pct = s.file_count > 0
-    ? Math.round((s.scanned_file_count / s.file_count) * 100)
-    : 0;
+  const pct =
+    s.file_count > 0
+      ? Math.round((s.scanned_file_count / s.file_count) * 100)
+      : 0;
 
   return (
     <Card>
@@ -31,14 +27,18 @@ export function SearchCard({ s, onDelete }: Props) {
         <div className="flex justify-between items-start mb-2">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold">Search #{s.id}</span>
-            <span className="text-muted-foreground text-sm">{s.created_at}</span>
+            <span className="text-muted-foreground text-sm">
+              {s.created_at}
+            </span>
             <StatusBadge status={s.status} />
           </div>
           <div className="flex gap-2 shrink-0">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.push(`/search_results?search_id=${s.id}`)}
+              onClick={() =>
+                router.push(searchResultsRoute({ searchId: s.id }))
+              }
             >
               View results
             </Button>
@@ -52,7 +52,9 @@ export function SearchCard({ s, onDelete }: Props) {
           <span className="text-muted-foreground">Domains: </span>
           {s.domains.length > 0 ? (
             s.domains.map((d) => (
-              <Badge key={d} variant="outline" className="mr-1">{d}</Badge>
+              <Badge key={d} variant="outline" className="mr-1">
+                {d}
+              </Badge>
             ))
           ) : (
             <em>all</em>
@@ -66,30 +68,36 @@ export function SearchCard({ s, onDelete }: Props) {
               <li key={i}>
                 <code>{c.regex}</code>
                 {c.not_regex_nearby && (
-                  <> — not nearby: <code>{c.not_regex_nearby}</code></>
+                  <>
+                    {' '}
+                    — not nearby: <code>{c.not_regex_nearby}</code>
+                  </>
                 )}
               </li>
             ))}
           </ol>
         </div>
 
-        {(s.status === "pending" || s.status === "running") && (
+        {(s.status === 'pending' || s.status === 'running') && (
           <div>
             <div className="flex justify-between text-xs text-muted-foreground mb-1">
               <span>Scanning…</span>
-              <span>{s.scanned_file_count} / {s.file_count} ({pct}%)</span>
+              <span>
+                {s.scanned_file_count} / {s.file_count} ({pct}%)
+              </span>
             </div>
             <Progress value={pct} indeterminate className="h-1.5" />
           </div>
         )}
-        {s.status === "error" && (
+        {s.status === 'error' && (
           <p className="text-sm text-destructive">
             <strong>Error:</strong> {s.error_message}
           </p>
         )}
-        {s.status === "done" && (
+        {s.status === 'done' && (
           <Badge variant="default">
-            {s.match_file_count} file{s.match_file_count !== 1 ? "s" : ""} with matches
+            {s.match_file_count} file{s.match_file_count !== 1 ? 's' : ''} with
+            matches
           </Badge>
         )}
       </CardContent>

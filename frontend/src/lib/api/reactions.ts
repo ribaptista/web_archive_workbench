@@ -1,7 +1,5 @@
-import type {
-  ReactionType,
-  MatchedCondition,
-} from '@/components/FileResultCard';
+import type { ReactionType, MatchedCondition } from './shared';
+import { fetchJson } from './fetch_json';
 
 export interface ReactionToggleResult {
   activeReactionTypeIds: number[];
@@ -13,7 +11,7 @@ export async function toggleReaction(
   reactionTypeId: number,
   active: boolean,
 ): Promise<ReactionToggleResult> {
-  const res = await fetch('/api/reactions/', {
+  return fetchJson<ReactionToggleResult>('/api/reactions/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -23,8 +21,6 @@ export async function toggleReaction(
       active,
     }),
   });
-  if (!res.ok) throw new Error(res.statusText);
-  return res.json();
 }
 
 export interface ReactionsViewFile {
@@ -54,7 +50,5 @@ export async function fetchReactionsView(
     page: String(page),
   });
   for (const d of filterDomains) q.append('domain[]', d);
-  const res = await fetch(`/api/reactions/?${q}`);
-  if (!res.ok) throw new Error(res.statusText);
-  return res.json();
+  return fetchJson<ReactionsViewData>(`/api/reactions/?${q}`);
 }

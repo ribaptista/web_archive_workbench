@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { Button } from "@/components/ui/button";
-import { DynamicIcon } from "@/components/FileResultCard";
+import { Button } from '@/components/ui/button';
+import { DynamicIcon } from '@/components/ui/dynamic-icon';
 
 export interface ToggleIconItem {
   id: number;
@@ -22,7 +22,13 @@ interface Props {
  * Empty `selected` set means "no filter" — the caller decides what that
  * implies semantically.
  */
-export function ToggleIconGroup({ label, items, selected, onChange, counts }: Props) {
+export function ToggleIconGroup({
+  label,
+  items,
+  selected,
+  onChange,
+  counts,
+}: Props) {
   if (items.length === 0) return null;
 
   function toggle(id: number) {
@@ -43,14 +49,16 @@ export function ToggleIconGroup({ label, items, selected, onChange, counts }: Pr
             <Button
               key={item.id}
               type="button"
-              variant={active ? "default" : "outline"}
+              variant={active ? 'default' : 'outline'}
               size="sm"
               onClick={() => toggle(item.id)}
             >
               <DynamicIcon name={item.icon} active={active} />
               {item.label}
               {count !== undefined && (
-                <span className="ml-1 opacity-60 font-normal text-xs">({count})</span>
+                <span className="ml-1 opacity-60 font-normal text-xs">
+                  ({count})
+                </span>
               )}
             </Button>
           );

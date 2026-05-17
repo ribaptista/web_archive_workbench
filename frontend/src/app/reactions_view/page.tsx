@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { NumberedPagination } from '@/components/NumberedPagination';
+import { PageContainer } from '@/components/PageContainer';
 import { FileResultCard } from '@/components/FileResultCard';
 import { Spinner } from '@/components/ui/spinner';
 import { ErrorMessage } from '@/components/ui/error-message';
@@ -16,10 +17,11 @@ import {
 } from '@/lib/api';
 import { toast } from 'sonner';
 import { reactionsViewRoute } from '@/lib/routes';
-import { allSelected } from '@/lib/utils';
+import { collapseIfAllSelected } from '@/lib/selection';
+import { reactionKey } from '@/lib/reaction_key';
 import type { ReactionsViewData } from '@/lib/api';
 
-function ReactionsViewInner() {
+export default function ReactionsViewPage() {
   const router = useRouter();
   const params = useSearchParams();
   const reactionTypeId = Number(params.get('reaction_type_id') ?? '1');
@@ -58,8 +60,7 @@ function ReactionsViewInner() {
   }, [load]);
 
   async function toggleReaction(url: string, timestamp: number, rtId: number) {
-    const key = `${url}|${timestamp}:${rtId}`;
-    const isActive = activeReactions.has(key);
+    const isActive = activeReactions.has(reactionKey(url, timestamp, rtId));
     const result = await apiToggleReaction(
       url,
       timestamp,
@@ -73,18 +74,16 @@ function ReactionsViewInner() {
     setActiveReactions((prev) => {
       const next = new Set(prev);
       for (const rt of data?.reactionTypes ?? [])
-        next.delete(`${url}|${timestamp}:${rt.id}`);
+        next.delete(reactionKey(url, timestamp, rt.id));
       for (const id of result.activeReactionTypeIds)
-        next.add(`${url}|${timestamp}:${id}`);
+        next.add(reactionKey(url, timestamp, id));
       return next;
     });
   }
 
   function applyDomainFilter(newDomains: Set<string>) {
     const allDomainIds = (data?.domains ?? []).map((d) => d.id);
-    const domains = allSelected(newDomains, allDomainIds)
-      ? new Set<string>()
-      : newDomains;
+    const domains = collapseIfAllSelected(newDomains, allDomainIds);
     router.push(reactionsViewRoute(reactionTypeId, 1, domains));
   }
 
@@ -107,7 +106,7 @@ function ReactionsViewInner() {
   } = data ?? {};
 
   return (
-    <div className="container max-w-5xl py-8 mx-auto px-4">
+    <PageContainer>
       <h1 className="text-2xl font-bold mb-4">Reactions</h1>
 
       {/* Reaction type selector */}
@@ -183,10 +182,6 @@ function ReactionsViewInner() {
         onNavigate={router.push}
         className="mt-3"
       />
-    </div>
+    </PageContainer>
   );
-}
-
-export default function ReactionsViewPage() {
-  return <ReactionsViewInner />;
 }

@@ -1,8 +1,9 @@
-"use client";
+'use client';
 
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import type { DomainStats } from "@/lib/api";
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { domainErrorsRoute } from '@/lib/routes';
+import type { DomainStats } from '@/lib/api';
 
 export function DomainStatsCard({ d }: { d: DomainStats }) {
   return (
@@ -16,7 +17,7 @@ export function DomainStatsCard({ d }: { d: DomainStats }) {
         {d.errored_entry_count > 0 && (
           <Badge variant="destructive" className="cursor-pointer p-0">
             <a
-              href={`/domain_errors?domain=${encodeURIComponent(d.name)}`}
+              href={domainErrorsRoute(d.name, new Set(), new Set())}
               className="px-2.5 py-0.5 block"
             >
               {d.errored_entry_count} errored

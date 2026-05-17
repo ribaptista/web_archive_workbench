@@ -1,3 +1,8 @@
+import type { SearchResultsData } from './types';
+import { fetchJson, fetchJsonVoid } from '../fetch_json';
+
+export * from './types';
+
 export interface SearchResultsParams {
   searchId: number;
   cursorTimestamp?: number;
@@ -8,9 +13,9 @@ export interface SearchResultsParams {
   filterReactionTypeIds?: number[];
 }
 
-export async function fetchSearchResults<T>(
+export async function fetchSearchResults(
   params: SearchResultsParams,
-): Promise<T> {
+): Promise<SearchResultsData> {
   const q = new URLSearchParams();
   if (params.cursorTimestamp !== undefined)
     q.set('cursor_timestamp', String(params.cursorTimestamp));
@@ -22,9 +27,9 @@ export async function fetchSearchResults<T>(
     q.append('condition_id[]', String(id));
   for (const id of params.filterReactionTypeIds ?? [])
     q.append('reaction_type_id[]', String(id));
-  const res = await fetch(`/api/searches/${params.searchId}/results?${q}`);
-  if (!res.ok) throw new Error(res.statusText);
-  return res.json();
+  return fetchJson<SearchResultsData>(
+    `/api/searches/${params.searchId}/results?${q}`,
+  );
 }
 
 export interface SearchCondition {
@@ -50,9 +55,7 @@ export interface SearchesData {
 }
 
 export async function fetchSearches(): Promise<SearchesData> {
-  const res = await fetch('/api/searches/');
-  if (!res.ok) throw new Error(res.statusText);
-  return res.json();
+  return fetchJson<SearchesData>('/api/searches/');
 }
 
 export interface CreateSearchParams {
@@ -71,15 +74,12 @@ export async function createSearch(
   for (const id of params.domainIds) {
     body.append('cdx_file_id[]', id);
   }
-  const res = await fetch('/api/searches/', { method: 'POST', body });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? 'Server error');
-  }
-  return res.json();
+  return fetchJson<{ searchId: number }>('/api/searches/', {
+    method: 'POST',
+    body,
+  });
 }
 
 export async function deleteSearch(id: number): Promise<void> {
-  const res = await fetch(`/api/searches/${id}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(res.statusText);
+  return fetchJsonVoid(`/api/searches/${id}`, { method: 'DELETE' });
 }

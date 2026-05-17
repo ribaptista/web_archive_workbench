@@ -6,7 +6,8 @@ import {
   fetchSearchResults,
   toggleReaction as apiToggleReaction,
 } from '@/lib/api';
-import type { Cursor, SearchResultsData } from './types';
+import type { Cursor, SearchResultsData } from '@/lib/api';
+import { reactionKey } from '@/lib/reaction_key';
 
 interface Params {
   searchId: number;
@@ -40,22 +41,37 @@ export function useSearchResults({
     new Set(),
   );
 
-  // Stable join-keys for the dependency array of `load`.
+  // Stable join-keys for the dependency array of `load`. The array values
+  // themselves are read via refs so we can depend on the cheap string keys
+  // without confusing the exhaustive-deps lint rule.
   const domainsKey = filterDomains.join('\x00');
   const conditionsKey = filterConditionIds.join(',');
   const reactionsKey = filterReactionTypeIds.join(',');
+  const filtersRef = useRef({
+    filterDomains,
+    filterConditionIds,
+    filterReactionTypeIds,
+  });
+  useEffect(() => {
+    filtersRef.current = {
+      filterDomains,
+      filterConditionIds,
+      filterReactionTypeIds,
+    };
+  });
 
   const load = useCallback(() => {
     if (!searchId) return;
     setLoading(true);
-    fetchSearchResults<SearchResultsData>({
+    const f = filtersRef.current;
+    fetchSearchResults({
       searchId,
       cursorTimestamp: currentCursor?.timestamp,
       cursorRequestId: currentCursor?.requestId,
       similarTo,
-      filterDomains,
-      filterConditionIds,
-      filterReactionTypeIds,
+      filterDomains: f.filterDomains,
+      filterConditionIds: f.filterConditionIds,
+      filterReactionTypeIds: f.filterReactionTypeIds,
     })
       .then((d) => {
         setData(d);
@@ -63,7 +79,6 @@ export function useSearchResults({
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     searchId,
     currentCursor,
@@ -85,8 +100,9 @@ export function useSearchResults({
 
   const toggleReaction = useCallback(
     async (url: string, timestamp: number, reactionTypeId: number) => {
-      const key = `${url}|${timestamp}:${reactionTypeId}`;
-      const isActive = activeReactions.has(key);
+      const isActive = activeReactions.has(
+        reactionKey(url, timestamp, reactionTypeId),
+      );
       const result = await apiToggleReaction(
         url,
         timestamp,
@@ -97,9 +113,9 @@ export function useSearchResults({
       setActiveReactions((prev) => {
         const next = new Set(prev);
         for (const rt of data?.reactionTypes ?? [])
-          next.delete(`${url}|${timestamp}:${rt.id}`);
+          next.delete(reactionKey(url, timestamp, rt.id));
         for (const id of result.activeReactionTypeIds)
-          next.add(`${url}|${timestamp}:${id}`);
+          next.add(reactionKey(url, timestamp, id));
         return next;
       });
     },

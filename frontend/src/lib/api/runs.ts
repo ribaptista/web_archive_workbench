@@ -1,3 +1,5 @@
+import { fetchJson } from './fetch_json';
+
 export interface RunArg {
   arg_name: string;
   arg_value: string;
@@ -30,7 +32,5 @@ export interface RunStats {
 }
 
 export async function fetchRuns(): Promise<RunStats[]> {
-  const res = await fetch('/api/runs/');
-  if (!res.ok) throw new Error(res.statusText);
-  return res.json();
+  return fetchJson<RunStats[]>('/api/runs/');
 }

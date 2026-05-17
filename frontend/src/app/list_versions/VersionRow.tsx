@@ -1,15 +1,8 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/StatusBadge';
 import { replayUrl } from '@/lib/replay';
 import type { Version } from '@/lib/api';
-
-function StatusBadge({ status }: { status: string }) {
-  if (status === 'ok') return <Badge variant="default">ok</Badge>;
-  if (status === 'redirect') return <Badge variant="secondary">redirect</Badge>;
-  if (status === 'error') return <Badge variant="destructive">error</Badge>;
-  return <Badge variant="outline">pending</Badge>;
-}
 
 export function VersionRow({ v }: { v: Version }) {
   const ts = String(v.timestamp);

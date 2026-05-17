@@ -306,7 +306,7 @@ async function syncDomains(
       }
       summary.push(result);
     } catch (err) {
-      console.error(`  Error fetching CDX: ${err}`);
+      log(`  Error fetching CDX: ${err}`);
       throw err;
     }
   }

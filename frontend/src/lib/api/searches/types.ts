@@ -1,4 +1,4 @@
-import type { ContextWindow, ReactionType } from '@/components/FileResultCard';
+import type { ContextWindow, ReactionType } from '../shared';
 
 export interface SearchInfo {
   id: number;
@@ -15,7 +15,8 @@ export interface Condition {
   not_regex_nearby: string | null;
 }
 
-export interface Domain {
+/** Domain entry inside a SearchResultsData payload. */
+export interface SearchDomain {
   name: string;
 }
 
@@ -38,7 +39,7 @@ export interface Cursor {
 export interface SearchResultsData {
   search: SearchInfo;
   conditions: Condition[];
-  domains: Domain[];
+  domains: SearchDomain[];
   files: FileResult[];
   totalFiles: number;
   nextCursor: Cursor | null;
@@ -55,5 +56,3 @@ export interface SearchResultsData {
   countsByCondition: Record<number, number>;
   countsByReaction: Record<number, number>;
 }
-
-export type { ContextWindow, ReactionType };

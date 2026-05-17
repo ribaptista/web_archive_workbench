@@ -1,4 +1,5 @@
 import type { BreadcrumbPart } from '@/components/PathBreadcrumb';
+import { fetchJson } from './fetch_json';
 
 export interface TreeNode {
   path: string;
@@ -28,9 +29,7 @@ export async function fetchResources(
     q.set('level', String(params.level ?? 0));
   }
   if (params.cursor) q.set('cursor', params.cursor);
-  const res = await fetch(`/api/resources?${q}`);
-  if (!res.ok) throw new Error(res.statusText);
-  return res.json();
+  return fetchJson<ResourcesData>(`/api/resources?${q}`);
 }
 
 export interface Version {
@@ -66,7 +65,5 @@ export async function fetchListVersions(
       : { url: params.url ?? '' },
   );
   if (params.cursor != null) q.set('cursor', String(params.cursor));
-  const res = await fetch(`/api/list_versions?${q}`);
-  if (!res.ok) throw new Error(res.statusText);
-  return res.json();
+  return fetchJson<ListVersionsData>(`/api/list_versions?${q}`);
 }

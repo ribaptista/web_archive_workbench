@@ -2,28 +2,22 @@
 
 export const dynamic = 'force-dynamic';
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  useCallback,
-  useMemo,
-  Suspense,
-} from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { PageContainer } from '@/components/PageContainer';
 import { Spinner } from '@/components/ui/spinner';
 import { ErrorMessage } from '@/components/ui/error-message';
 import { Button } from '@/components/ui/button';
 import { ToggleGroupWithSelectAll } from '@/components/ToggleGroupWithSelectAll';
 import { DomainErrorList } from './DomainErrorList';
-import type { ErrorEntry } from './DomainErrorList';
 import { fetchDomainErrorFilters, fetchDomainErrors } from '@/lib/api';
 import type { FilterOption, ErrorCursor } from '@/lib/api';
+import { useInfiniteScroll } from '@/lib/useInfiniteScroll';
 import { domainErrorsRoute } from '@/lib/routes';
-import { allSelected } from '@/lib/utils';
+import { collapseIfAllSelected } from '@/lib/selection';
 
-function DomainErrorsInner() {
+export default function DomainErrorsPage() {
   const router = useRouter();
   const params = useSearchParams();
   const domain = params.get('domain') ?? '';
@@ -31,6 +25,8 @@ function DomainErrorsInner() {
   // Applied filters come directly from the URL
   const appliedCodes = useMemo(() => params.getAll('error_code[]'), [params]);
   const appliedNames = useMemo(() => params.getAll('error_name[]'), [params]);
+  const appliedCodesKey = appliedCodes.join(',');
+  const appliedNamesKey = appliedNames.join(',');
 
   // Filter options loaded from the API
   const [filterOptions, setFilterOptions] = useState<FilterOption[]>([]);
@@ -45,21 +41,27 @@ function DomainErrorsInner() {
 
   // Keep local selections in sync when URL params change (e.g. back/forward navigation)
   useEffect(() => {
-    setSelectedCodes(new Set(appliedCodes));
-  }, [appliedCodes.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+    setSelectedCodes(
+      new Set(appliedCodesKey ? appliedCodesKey.split(',') : []),
+    );
+  }, [appliedCodesKey]);
   useEffect(() => {
-    setSelectedNames(new Set(appliedNames));
-  }, [appliedNames.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+    setSelectedNames(
+      new Set(appliedNamesKey ? appliedNamesKey.split(',') : []),
+    );
+  }, [appliedNamesKey]);
 
-  // Infinite scroll state
-  const [entries, setEntries] = useState<ErrorEntry[]>([]);
-  const [nextCursor, setNextCursor] = useState<ErrorCursor | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
-
-  // Load filter options once; default local selections to "all" when no filter is in the URL
+  // Load filter options once per domain; default local selections to "all"
+  // when no filter is in the URL. We deliberately depend on `domain` only —
+  // the URL-key reads decide *initial* seeding and must not retrigger this
+  // effect when the user edits filters.
+  const seedKeysRef = useRef({
+    codes: appliedCodesKey,
+    names: appliedNamesKey,
+  });
+  useEffect(() => {
+    seedKeysRef.current = { codes: appliedCodesKey, names: appliedNamesKey };
+  });
   useEffect(() => {
     if (!domain) return;
     fetchDomainErrorFilters(domain)
@@ -67,75 +69,41 @@ function DomainErrorsInner() {
         setFilterOptions(opts);
         const allCodes = [...new Set(opts.map((f) => f.error_code))];
         const allNames = [...new Set(opts.map((f) => f.error_name))];
-        if (appliedCodes.length === 0) setSelectedCodes(new Set(allCodes));
-        if (appliedNames.length === 0) setSelectedNames(new Set(allNames));
+        if (!seedKeysRef.current.codes) setSelectedCodes(new Set(allCodes));
+        if (!seedKeysRef.current.names) setSelectedNames(new Set(allNames));
       })
-      .catch((e) => setError(e.message));
-  }, [domain]); // eslint-disable-line react-hooks/exhaustive-deps
+      .catch(() => {});
+  }, [domain]);
 
-  const fetchPage = useCallback(
-    (cursor: ErrorCursor | null, append: boolean) => {
-      (append ? setLoadingMore : setLoading)(true);
-      fetchDomainErrors({
-        domain,
-        errorCodes: appliedCodes,
-        errorNames: appliedNames,
-        cursor,
-      })
-        .then((data) => {
-          setEntries((prev) =>
-            append ? [...prev, ...data.entries] : data.entries,
-          );
-          setNextCursor(data.nextCursor);
-        })
-        .catch((e) => setError(e.message))
-        .finally(() => (append ? setLoadingMore : setLoading)(false));
-    },
-    [domain, appliedCodes.join(','), appliedNames.join(',')],
-  );
-
-  // Reset + refetch when applied filters change
-  useEffect(() => {
-    if (!domain) return;
-    setEntries([]);
-    setNextCursor(null);
-    setError(null);
-    fetchPage(null, false);
-  }, [fetchPage, domain]);
-
-  // IntersectionObserver for infinite scroll
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && nextCursor !== null && !loadingMore) {
-        fetchPage(nextCursor, true);
-      }
+  const { entries, loading, loadingMore, error, sentinelRef } =
+    useInfiniteScroll({
+      enabled: !!domain,
+      resetKey: `${domain}|${appliedCodesKey}|${appliedNamesKey}`,
+      fetchPage: (cursor: ErrorCursor | null) =>
+        fetchDomainErrors({
+          domain,
+          errorCodes: appliedCodes,
+          errorNames: appliedNames,
+          cursor,
+        }),
     });
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [nextCursor, loadingMore, fetchPage]);
-
-  function applyFilters() {
-    const codes = allSelected(selectedCodes, distinctCodes)
-      ? new Set<string>()
-      : selectedCodes;
-    const names = allSelected(selectedNames, distinctNames)
-      ? new Set<string>()
-      : selectedNames;
-    router.push(domainErrorsRoute(domain, codes, names), { scroll: false });
-  }
 
   // Distinct codes and names for filter pills
   const distinctCodes = [...new Set(filterOptions.map((f) => f.error_code))];
   const distinctNames = [...new Set(filterOptions.map((f) => f.error_name))];
+
+  function applyFilters() {
+    const codes = collapseIfAllSelected(selectedCodes, distinctCodes);
+    const names = collapseIfAllSelected(selectedNames, distinctNames);
+    router.push(domainErrorsRoute(domain, codes, names), { scroll: false });
+  }
 
   if (!domain) return <ErrorMessage message="Missing domain parameter" />;
   if (error) return <ErrorMessage message={error} />;
   if (loading) return <Spinner />;
 
   return (
-    <div className="container max-w-5xl py-8 mx-auto px-4">
+    <PageContainer>
       <h1 className="text-2xl font-bold mb-1">Errors</h1>
       <p className="text-muted-foreground text-sm mb-6">{domain}</p>
 
@@ -175,14 +143,6 @@ function DomainErrorsInner() {
       <div ref={sentinelRef} className="py-4 flex justify-center">
         {loadingMore && <Spinner />}
       </div>
-    </div>
-  );
-}
-
-export default function DomainErrorsPage() {
-  return (
-    <Suspense>
-      <DomainErrorsInner />
-    </Suspense>
+    </PageContainer>
   );
 }

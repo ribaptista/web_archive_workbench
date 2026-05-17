@@ -1,75 +1,61 @@
-"use client";
+'use client';
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useRef, useState, useCallback, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Spinner } from "@/components/ui/spinner";
-import { ErrorMessage } from "@/components/ui/error-message";
-import { PathBreadcrumb } from "@/components/PathBreadcrumb";
-import type { BreadcrumbPart } from "@/components/PathBreadcrumb";
-import { VersionRow } from "./VersionRow";
-import { fetchListVersions } from "@/lib/api";
-import type { Version, ListVersionsData } from "@/lib/api";
+import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Spinner } from '@/components/ui/spinner';
+import { PageContainer } from '@/components/PageContainer';
+import { ErrorMessage } from '@/components/ui/error-message';
+import { PathBreadcrumb } from '@/components/PathBreadcrumb';
+import type { BreadcrumbPart } from '@/components/PathBreadcrumb';
+import { VersionRow } from './VersionRow';
+import { fetchListVersions } from '@/lib/api';
+import { resourcesRoute } from '@/lib/routes';
+import { useInfiniteScroll } from '@/lib/useInfiniteScroll';
 
-function ListVersionsInner() {
+export default function ListVersionsPage() {
   const router = useRouter();
   const params = useSearchParams();
-  const originalUrl = params.get("originalUrl");
-  const url = originalUrl ?? params.get("url") ?? "";
+  const originalUrl = params.get('originalUrl');
+  const url = originalUrl ?? params.get('url') ?? '';
 
-  const [versions, setVersions] = useState<Version[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbPart[]>([]);
-  const [nextCursor, setNextCursor] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  const fetchPage = useCallback((cursor: number | null, append: boolean) => {
-    (append ? setLoadingMore : setLoading)(true);
-    fetchListVersions({ url, originalUrl: originalUrl ?? undefined, cursor })
-      .then((data) => {
-        if (!append) setBreadcrumbs(data.breadcrumbs);
-        setVersions((prev) => append ? [...prev, ...data.versions] : data.versions);
-        setNextCursor(data.nextCursor);
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => (append ? setLoadingMore : setLoading)(false));
-  }, [url, originalUrl]);
-
-  useEffect(() => {
-    if (!url) return;
-    setVersions([]);
-    setNextCursor(null);
-    setError(null);
-    fetchPage(null, false);
-  }, [fetchPage]);
-
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && nextCursor !== null && !loadingMore) {
-        fetchPage(nextCursor, true);
-      }
-    });
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [nextCursor, loadingMore, fetchPage]);
+  const {
+    entries: versions,
+    loading,
+    loadingMore,
+    error,
+    sentinelRef,
+  } = useInfiniteScroll({
+    enabled: !!url,
+    resetKey: `${url}|${originalUrl ?? ''}`,
+    fetchPage: (cursor: number | null) =>
+      fetchListVersions({
+        url,
+        originalUrl: originalUrl ?? undefined,
+        cursor,
+      }).then((d) => ({
+        entries: d.versions,
+        nextCursor: d.nextCursor,
+        breadcrumbs: d.breadcrumbs,
+      })),
+    onFirstPage: (d) => setBreadcrumbs(d.breadcrumbs),
+  });
 
   if (!url) return <ErrorMessage message="Missing url parameter" />;
   if (error) return <ErrorMessage message={error} />;
   if (loading) return <Spinner />;
 
   return (
-    <div className="container max-w-5xl py-8 mx-auto px-4">
+    <PageContainer>
       <PathBreadcrumb
         className="mb-4"
         crumbs={breadcrumbs}
         rootLabel="All domains"
-        onRootClick={() => router.push("/resources")}
-        onCrumbClick={(path, level) => router.push(`/resources?path=${encodeURIComponent(path)}&level=${level}`)}
+        onRootClick={() => router.push(resourcesRoute())}
+        onCrumbClick={(path, level) => router.push(resourcesRoute(path, level))}
       />
 
       <h1 className="text-xl font-bold mb-1">Versions</h1>
@@ -89,14 +75,6 @@ function ListVersionsInner() {
       <div ref={sentinelRef} className="py-4 flex justify-center">
         {loadingMore && <Spinner />}
       </div>
-    </div>
-  );
-}
-
-export default function ListVersionsPage() {
-  return (
-    <Suspense>
-      <ListVersionsInner />
-    </Suspense>
+    </PageContainer>
   );
 }

@@ -1,11 +1,11 @@
+import { fetchJson } from './fetch_json';
+
 export interface Domain {
   name: string;
 }
 
 export async function fetchDomains(): Promise<Domain[]> {
-  const res = await fetch('/api/domains/');
-  if (!res.ok) throw new Error(res.statusText);
-  return res.json();
+  return fetchJson<Domain[]>('/api/domains/');
 }
 
 export interface DomainStats {
@@ -17,9 +17,7 @@ export interface DomainStats {
 }
 
 export async function fetchDomainStats(): Promise<DomainStats[]> {
-  const res = await fetch('/api/domains/stats');
-  if (!res.ok) throw new Error(res.statusText);
-  return res.json();
+  return fetchJson<DomainStats[]>('/api/domains/stats');
 }
 
 export interface FilterOption {
@@ -30,11 +28,9 @@ export interface FilterOption {
 export async function fetchDomainErrorFilters(
   domain: string,
 ): Promise<FilterOption[]> {
-  const res = await fetch(
+  return fetchJson<FilterOption[]>(
     `/api/domains/error_filters?domain=${encodeURIComponent(domain)}`,
   );
-  if (!res.ok) throw new Error(res.statusText);
-  return res.json();
 }
 
 export interface ErrorCursor {
@@ -77,7 +73,5 @@ export async function fetchDomainErrors(
     q.set('cursor_url', params.cursor.url);
     q.set('cursor_ts', String(params.cursor.timestamp));
   }
-  const res = await fetch(`/api/domains/errors?${q}`);
-  if (!res.ok) throw new Error(res.statusText);
-  return res.json();
+  return fetchJson<DomainErrorsData>(`/api/domains/errors?${q}`);
 }
