@@ -7,6 +7,7 @@ import {
   DEFAULT_REPLAY_BASE_URL,
   SUPPORTED_SYNC_STRATEGIES,
   type CdxServer,
+  type CdxQueryFilter,
   type SupportedSyncStrategy,
 } from '../../cdx/sync';
 import type { LimiterOptions } from '../../http/agents';
@@ -28,6 +29,7 @@ export interface CliArgs {
   dryRun: boolean;
   verbose: boolean;
   cdxServer: CdxServer;
+  cdxQueryFilter: CdxQueryFilter;
   fetchPendingOptions: FetchPendingOptions;
   downloadOptions: DownloadOptions;
 }
@@ -35,6 +37,51 @@ export interface CliArgs {
 const DEFAULT_CDX_PAGE_SIZE = 128;
 const ONE_SECOND = 1_000;
 const ONE_MINUTE_IN_MILLIS = 60 * ONE_SECOND;
+
+function validateDomainFilter(all: boolean, domains: string[]): void {
+  if (all && domains.length > 0) {
+    throw new Error('--all and --domain are mutually exclusive');
+  }
+  if (!all && domains.length === 0) {
+    throw new Error('Either --domain or --all must be provided');
+  }
+}
+
+function validateCdxDateTimeRangeFilter(
+  cdxFrom: string | undefined,
+  cdxTo: string | undefined,
+  skipCdxSync: boolean,
+): void {
+  if ((cdxFrom !== undefined || cdxTo !== undefined) && skipCdxSync) {
+    throw new Error(
+      '--cdx-from / --cdx-to cannot be used together with --skip-cdx-sync',
+    );
+  }
+  if (cdxFrom !== undefined && cdxTo !== undefined && cdxFrom >= cdxTo) {
+    throw new Error('--cdx-from must be lower than --cdx-to');
+  }
+}
+
+function validateRateLimit(
+  dryRun: boolean,
+  maxReqPerSecond: number | undefined,
+  maxReqPerMinute: number | undefined,
+): void {
+  if (maxReqPerSecond !== undefined && maxReqPerMinute !== undefined) {
+    throw new Error(
+      '--max-req-per-second and --max-req-per-minute are mutually exclusive; provide only one',
+    );
+  }
+  if (
+    !dryRun &&
+    maxReqPerSecond === undefined &&
+    maxReqPerMinute === undefined
+  ) {
+    throw new Error(
+      'Either --max-req-per-second or --max-req-per-minute must be provided',
+    );
+  }
+}
 
 export function parseArgs(): CliArgs {
   const argv = yargs(hideBin(process.argv))
@@ -59,6 +106,11 @@ export function parseArgs(): CliArgs {
       type: 'number',
       description: 'CDX API page size (env: CDX_PAGE_SIZE)',
       default: DEFAULT_CDX_PAGE_SIZE,
+      coerce: (v: number) => {
+        if (!Number.isInteger(v) || v <= 0)
+          throw new Error('--cdx-page-size must be a positive integer');
+        return v;
+      },
     })
     .option('proxy-file', {
       type: 'string',
@@ -111,6 +163,16 @@ export function parseArgs(): CliArgs {
       description: 'Base URL for replaying archived resources',
       default: DEFAULT_REPLAY_BASE_URL,
     })
+    .option('cdx-from', {
+      type: 'string',
+      description:
+        'Lower-bound CDX timestamp (YYYYMMDDhhmmss or any prefix). Only valid without --skip-cdx-sync.',
+    })
+    .option('cdx-to', {
+      type: 'string',
+      description:
+        'Upper-bound CDX timestamp (YYYYMMDDhhmmss or any prefix). Only valid without --skip-cdx-sync.',
+    })
     .option('dry-run', {
       type: 'boolean',
       default: false,
@@ -125,37 +187,17 @@ export function parseArgs(): CliArgs {
     })
     .check((args) => {
       const domains = (args['domain'] as string[] | undefined) ?? [];
-      if (args['all'] && domains.length > 0) {
-        throw new Error('--all and --domain are mutually exclusive');
-      }
-      if (!args['all'] && domains.length === 0) {
-        throw new Error('Either --domain or --all must be provided');
-      }
-      if (
-        args['max-req-per-second'] !== undefined &&
-        args['max-req-per-minute'] !== undefined
-      ) {
-        throw new Error(
-          '--max-req-per-second and --max-req-per-minute are mutually exclusive; provide only one',
-        );
-      }
-      if (
-        !args['dry-run'] &&
-        args['max-req-per-second'] === undefined &&
-        args['max-req-per-minute'] === undefined
-      ) {
-        throw new Error(
-          'Either --max-req-per-second or --max-req-per-minute must be provided',
-        );
-      }
-      const cdxPageSize = args['cdx-page-size'];
-      if (
-        typeof cdxPageSize !== 'number' ||
-        !Number.isInteger(cdxPageSize) ||
-        cdxPageSize <= 0
-      ) {
-        throw new Error('--cdx-page-size must be a positive integer');
-      }
+      validateDomainFilter(args['all'] as boolean, domains);
+      validateRateLimit(
+        args['dry-run'] as boolean,
+        args['max-req-per-second'] as number | undefined,
+        args['max-req-per-minute'] as number | undefined,
+      );
+      validateCdxDateTimeRangeFilter(
+        args['cdx-from'] as string | undefined,
+        args['cdx-to'] as string | undefined,
+        args['skip-cdx-sync'] as boolean,
+      );
       return true;
     })
     .parseSync();
@@ -191,6 +233,10 @@ export function parseArgs(): CliArgs {
       baseUrl: argv['cdx-base-url'] as string,
       strategy: argv['cdx-strategy'] as SupportedSyncStrategy,
       replayBaseUrl: argv['replay-base-url'] as string,
+    },
+    cdxQueryFilter: {
+      from: argv['cdx-from'] as string | undefined,
+      to: argv['cdx-to'] as string | undefined,
     },
     fetchPendingOptions: {
       skipErrors,

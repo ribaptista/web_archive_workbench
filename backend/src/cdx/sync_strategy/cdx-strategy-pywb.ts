@@ -7,8 +7,19 @@ type PywbResult = Record<string, unknown>[];
 export class PywbCdxStrategy implements CdxStrategy {
   private readonly url: string;
 
-  constructor(domain: string, cdxBaseUrl: string, cdxPageSize: number) {
-    this.url = `${cdxBaseUrl}?matchType=domain&output=json&limit=${cdxPageSize}&url=${encodeURIComponent(domain)}`;
+  constructor(
+    domain: string,
+    cdxBaseUrl: string,
+    // pywb doesn't support pagination without zipnum indexes,
+    // but we keep the parameter for interface consistency
+    _cdxPageSize: number,
+    query?: { from?: string; to?: string },
+  ) {
+    let url = `${cdxBaseUrl}?matchType=domain&output=json&&url=${encodeURIComponent(domain)}`;
+    if (query?.from !== undefined)
+      url += `&from=${encodeURIComponent(query.from)}`;
+    if (query?.to !== undefined) url += `&to=${encodeURIComponent(query.to)}`;
+    this.url = url;
   }
 
   generateURL(_cursor: PageCursor | undefined): string {

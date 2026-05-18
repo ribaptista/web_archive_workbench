@@ -18,6 +18,7 @@ import {
   findNewEntries,
   type CdxQueryOptions,
   type CdxServer,
+  type CdxQueryFilter,
   type EvaluatedCdxEntry,
 } from '../../cdx/sync';
 import { ProgressTracker } from '../progress_tracker';
@@ -25,6 +26,14 @@ import { AgentPool } from '../../http/agent_pool';
 import { downloadEntry, type DownloadTask } from '../../request/downloader';
 
 import type { Database as DB } from 'better-sqlite3';
+
+/** Module-level tracker so the SIGINT handler can always stop the progress bar. */
+let activeTracker: ProgressTracker | null = null;
+
+process.once('SIGINT', () => {
+  activeTracker?.stopProgressBar();
+  process.exit(130); // 128 + SIGINT (2)
+});
 
 const NEW_ENTRIES_PREVIEW_CAP = 16;
 const RETRY_ENTRIES_PREVIEW_CAP = 16;
@@ -235,6 +244,7 @@ async function syncDomain(
   runId: string,
   dryRun: boolean,
   cdxServer: CdxServer,
+  cdxQueryRange: CdxQueryFilter,
   pageSize: number,
   log: (msg: string) => void = console.log,
   onNewEntries?: (count: number) => void,
@@ -246,6 +256,7 @@ async function syncDomain(
     baseUrl: cdxServer.baseUrl,
     strategy: cdxServer.strategy,
     pageSize,
+    query: cdxQueryRange,
   };
 
   for await (const pageEntries of fetchCdxRows(domain, cdxOptions, log)) {
@@ -278,6 +289,7 @@ async function syncDomains(
   runId: string,
   dryRun: boolean,
   cdxServer: CdxServer,
+  cdxQueryRange: CdxQueryFilter,
   pageSize: number,
   log: (msg: string) => void = console.log,
   onNewEntries?: (count: number) => void,
@@ -296,6 +308,7 @@ async function syncDomains(
         runId,
         dryRun,
         cdxServer,
+        cdxQueryRange,
         pageSize,
         log,
         onNewEntries,
@@ -322,6 +335,7 @@ async function runSyncMode(
   dryRun: boolean,
   verbose: boolean,
   cdxServer: CdxServer,
+  cdxQueryRange: CdxQueryFilter,
   pageSize: number,
   runId: string,
   log: (msg: string) => void = console.log,
@@ -338,6 +352,7 @@ async function runSyncMode(
     runId,
     dryRun,
     cdxServer,
+    cdxQueryRange,
     pageSize,
     log,
     onNewEntries,
@@ -361,6 +376,7 @@ async function runDryRun(
   skipCdxSync: boolean,
   verbose: boolean,
   cdxServer: CdxServer,
+  cdxQueryRange: CdxQueryFilter,
   cdxPageSize: number,
   fetchPendingOptions: FetchPendingOptions,
   runId: string,
@@ -374,6 +390,7 @@ async function runDryRun(
       true,
       verbose,
       cdxServer,
+      cdxQueryRange,
       cdxPageSize,
       runId,
     );
@@ -402,6 +419,7 @@ function handleCdxSync(
   domains: string[],
   skipCdxSync: boolean,
   cdxServer: CdxServer,
+  cdxQueryRange: CdxQueryFilter,
   cdxPageSize: number,
   runId: string,
   log: (msg: string) => void,
@@ -420,6 +438,7 @@ function handleCdxSync(
     false,
     false,
     cdxServer,
+    cdxQueryRange,
     cdxPageSize,
     runId,
     log,
@@ -470,6 +489,7 @@ async function runLiveRun(
   fetchPendingOptions: FetchPendingOptions,
   downloadOptions: DownloadOptions,
   cdxServer: CdxServer,
+  cdxQueryRange: CdxQueryFilter,
   runId: string,
 ): Promise<void> {
   const pool = new AgentPool({
@@ -489,6 +509,7 @@ async function runLiveRun(
   }
 
   const tracker = new ProgressTracker(pendingTaskCounts.total);
+  activeTracker = tracker;
   tracker.startProgressBar();
 
   const isSyncDone = handleCdxSync(
@@ -498,6 +519,7 @@ async function runLiveRun(
     domains,
     skipCdxSync,
     cdxServer,
+    cdxQueryRange,
     cdxPageSize,
     runId,
     (msg) => tracker.log(msg),
@@ -563,6 +585,7 @@ async function main() {
       args.skipCdxSync,
       args.verbose,
       args.cdxServer,
+      args.cdxQueryFilter,
       args.cdxPageSize,
       args.fetchPendingOptions,
       runId,
@@ -581,6 +604,7 @@ async function main() {
     args.fetchPendingOptions,
     args.downloadOptions,
     args.cdxServer,
+    args.cdxQueryFilter,
     runId,
   );
 }

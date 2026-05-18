@@ -2,6 +2,7 @@ const APP_HOST = 'localhost';
 const ADMIN_FRONTEND_ORIGIN = `http://${APP_HOST}:3000`;
 const ADMIN_BACKEND_ORIGIN = `http://${APP_HOST}:5050`;
 const REPLAY_SERVER_ORIGIN = `http://${APP_HOST}:5051`;
+const PYWB_SERVER_ORIGIN = `http://${APP_HOST}:8080`;
 
 const ALL_RESOURCE_TYPES = [
   'main_frame',
@@ -82,7 +83,7 @@ chrome.runtime.onInstalled.addListener(() => {
         id: 1,
         priority: 2,
         condition: {
-          regexFilter: `(${ADMIN_FRONTEND_ORIGIN}|${ADMIN_BACKEND_ORIGIN}|${REPLAY_SERVER_ORIGIN})/.*`,
+          regexFilter: `(${ADMIN_FRONTEND_ORIGIN}|${ADMIN_BACKEND_ORIGIN}|${REPLAY_SERVER_ORIGIN}|${PYWB_SERVER_ORIGIN})/.*`,
           initiatorDomains: [APP_HOST],
           resourceTypes: ALL_RESOURCE_TYPES,
         },

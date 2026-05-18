@@ -49,6 +49,12 @@ export interface CdxServer {
   replayBaseUrl: string;
 }
 
+/** Optional CDX timestamp filter */
+export interface CdxQueryFilter {
+  from?: string; // inclusive
+  to?: string; // inclusive
+}
+
 export function getOrCreateCdxSource(
   cdxRepo: CdxRepository,
   server: CdxServer,
@@ -153,11 +159,12 @@ export interface EvaluatedCdxEntry extends ParsedCdxEntry {
  * Fetches CDX rows for a domain and yields parsed entries page by page.
  * Delegates to the appropriate strategy (json_wayback or json_pywb).
  */
-export interface CdxQueryOptions {
+export type CdxQueryOptions = {
   baseUrl?: string;
   strategy?: SupportedSyncStrategy;
   pageSize?: number;
-}
+  query?: CdxQueryFilter;
+};
 
 export async function* fetchCdxRows(
   domain: string,
@@ -168,11 +175,12 @@ export async function* fetchCdxRows(
     baseUrl: cdxBaseUrl = DEFAULT_CDX_BASE_URL,
     strategy: cdxStrategy = DEFAULT_CDX_STRATEGY,
     pageSize: cdxPageSize = 50,
+    query,
   } = options;
   const strategy =
     cdxStrategy === 'json_pywb'
-      ? new PywbCdxStrategy(domain, cdxBaseUrl, cdxPageSize)
-      : new WaybackCdxStrategy(domain, cdxBaseUrl, cdxPageSize);
+      ? new PywbCdxStrategy(domain, cdxBaseUrl, cdxPageSize, query)
+      : new WaybackCdxStrategy(domain, cdxBaseUrl, cdxPageSize, query);
 
   let cursor: unknown = undefined;
   let page = 1;

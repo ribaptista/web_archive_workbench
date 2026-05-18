@@ -47,18 +47,22 @@ npm start -- \
 
 ## CDX source arguments
 
-| Argument                | Default                                 | Description                                                                                      |
-| ----------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `--cdx-base-url URL`    | `http://web.archive.org/cdx/search/cdx` | Where to query CDX.                                                                              |
-| `--cdx-strategy`        | `json_wayback`                          | `json_wayback` (Wayback resumeKey pagination) or `json_pywb` (pywb single-page jsonlines).       |
-| `--replay-base-url URL` | `https://web.archive.org/web/`          | Recorded with each entry; used to construct the `x-remote-live-replay-url` header during replay. |
+| Argument                | Default                                 | Description                                                                                                                                                         |
+| ----------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--cdx-base-url URL`    | `http://web.archive.org/cdx/search/cdx` | Where to query CDX.                                                                                                                                                 |
+| `--cdx-strategy`        | `json_wayback`                          | `json_wayback` (Wayback resumeKey pagination) or `json_pywb` (pywb single-page jsonlines).                                                                          |
+| `--cdx-from TIMESTAMP`  | —                                       | Lower-bound CDX timestamp filter (YYYYMMDDhhmmss or any prefix). Only valid without `--skip-cdx-sync`.                                                              |
+| `--cdx-to TIMESTAMP`    | —                                       | Upper-bound CDX timestamp filter (YYYYMMDDhhmmss or any prefix). Only valid without `--skip-cdx-sync`. If both are set, `--cdx-from` must be lower than `--cdx-to`. |
+| `--replay-base-url URL` | `https://web.archive.org/web/`          | Recorded with each entry; used to construct the `x-remote-live-replay-url` header during replay.                                                                    |
 
 ## Examples
 
 ### First-time download
 
 ```bash
-npm start -- -b ~/wab-data --domain example.com --max-req-per-second 2
+npm start -- -b ~/wab-data --domain example.com \
+  --cdx-from 20260301000000 \
+  --max-req-per-second 2
 ```
 
 ### Resume failed/pending entries only

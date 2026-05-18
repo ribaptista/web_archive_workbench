@@ -88,8 +88,17 @@ interface WaybackResult {
 export class WaybackCdxStrategy implements CdxStrategy {
   private readonly baseUrl: string;
 
-  constructor(domain: string, cdxBaseUrl: string, cdxPageSize: number) {
-    this.baseUrl = `${cdxBaseUrl}?matchType=domain&output=json&showResumeKey=true&limit=${cdxPageSize}&url=${encodeURIComponent(domain)}`;
+  constructor(
+    domain: string,
+    cdxBaseUrl: string,
+    cdxPageSize: number,
+    query?: { from?: string; to?: string },
+  ) {
+    let url = `${cdxBaseUrl}?matchType=domain&output=json&showResumeKey=true&limit=${cdxPageSize}&url=${encodeURIComponent(domain)}`;
+    if (query?.from !== undefined)
+      url += `&from=${encodeURIComponent(query.from)}`;
+    if (query?.to !== undefined) url += `&to=${encodeURIComponent(query.to)}`;
+    this.baseUrl = url;
   }
 
   generateURL(cursor: PageCursor | undefined): string {
