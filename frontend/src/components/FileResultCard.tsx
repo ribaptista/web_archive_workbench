@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { replayUrl } from '@/lib/replay';
 import { formatTimestamp } from '@/lib/format';
 import { reactionKey } from '@/lib/reaction_key';
@@ -109,13 +110,7 @@ export function FileResultCard({
               </p>
             )}
             {contextWindows && contextWindows.length > 0 && (
-              <ul className="space-y-1">
-                {contextWindows.map((win, i) => (
-                  <li key={i} className="text-sm whitespace-pre-wrap break-all">
-                    <HighlightedContext window={win} />
-                  </li>
-                ))}
-              </ul>
+              <ContextWindowList windows={contextWindows} />
             )}
           </div>
           {reactionTypes.length > 0 && (
@@ -167,5 +162,46 @@ export function FileResultCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+const CONTEXT_WINDOWS_PREVIEW = 2;
+
+function ContextWindowList({ windows }: { windows: ContextWindow[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const visible =
+    expanded || windows.length <= CONTEXT_WINDOWS_PREVIEW
+      ? windows
+      : windows.slice(0, CONTEXT_WINDOWS_PREVIEW);
+  const hiddenMatches = windows
+    .slice(visible.length)
+    .reduce((sum, w) => sum + w.matches.length, 0);
+
+  return (
+    <>
+      <ul className="space-y-1">
+        {visible.map((win, i) => (
+          <li key={i} className="text-sm whitespace-pre-wrap break-all">
+            <HighlightedContext window={win} />
+          </li>
+        ))}
+      </ul>
+      {hiddenMatches > 0 && (
+        <button
+          className="text-xs text-primary underline mt-1"
+          onClick={() => setExpanded(true)}
+        >
+          Show {hiddenMatches} more match{hiddenMatches !== 1 ? 'es' : ''}
+        </button>
+      )}
+      {expanded && windows.length > CONTEXT_WINDOWS_PREVIEW && (
+        <button
+          className="text-xs text-primary underline mt-1"
+          onClick={() => setExpanded(false)}
+        >
+          Show less
+        </button>
+      )}
+    </>
   );
 }

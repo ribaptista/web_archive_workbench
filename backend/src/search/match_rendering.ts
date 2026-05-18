@@ -35,6 +35,8 @@ export function highlightMatches(
   return result;
 }
 
+const MAX_MERGED_CONTEXT_LENGTH = 256;
+
 export function mergeContextWindows(
   fileContent: string,
   rawMatches: SearchMatchRow[],
@@ -57,7 +59,11 @@ export function mergeContextWindows(
       fileContent.length,
       m.match_offset + m.match_length + contextLength,
     );
-    if (windows.length > 0 && ctxStart <= windows[windows.length - 1].ctxEnd) {
+    if (
+      windows.length > 0 &&
+      ctxStart <= windows[windows.length - 1].ctxEnd &&
+      ctxEnd - windows[windows.length - 1].ctxStart <= MAX_MERGED_CONTEXT_LENGTH
+    ) {
       const last = windows[windows.length - 1];
       last.ctxEnd = Math.max(last.ctxEnd, ctxEnd);
       last.matches.push(m);
