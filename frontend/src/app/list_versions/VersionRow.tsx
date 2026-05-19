@@ -44,17 +44,18 @@ export function VersionRow({ v }: { v: Version }) {
         </span>
       )}
 
-      {v.status === 'error' && (
+      {v.status === 'error' && v.error && (
         <>
-          {v.error_code && (
-            <code className="text-xs text-destructive">{v.error_code}</code>
-          )}
-          {v.error_message && (
+          <code className="text-xs text-destructive">
+            {v.error.name}{' '}
+            <span className="opacity-70">{v.error.code || '(no code)'}</span>
+          </code>
+          {v.error.message && (
             <span
               className="text-muted-foreground text-xs truncate max-w-xs"
-              title={v.error_message}
+              title={v.error.message}
             >
-              {v.error_message}
+              {v.error.message}
             </span>
           )}
         </>

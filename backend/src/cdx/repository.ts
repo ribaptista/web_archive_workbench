@@ -1,5 +1,6 @@
 import type { Database as DB } from 'better-sqlite3';
 import { getPathParts } from '../http/normalized_url';
+import { type PlainError } from '../lib/errors';
 
 // ── Domain ────────────────────────────────────────────────────────────────────
 
@@ -65,10 +66,15 @@ export interface VersionPageRow {
   timestamp: number;
   successful_request_id: string | null;
   status: 'pending' | 'error' | 'ok' | 'redirect';
-  error_code: string | null;
-  error_message: string | null;
+  error?: PlainError;
   location_original: string | null;
   location_timestamp: number | null;
+}
+
+interface VersionPageRowRaw extends Omit<VersionPageRow, 'error'> {
+  error_code: string;
+  error_name: string | null;
+  error_message: string | null;
 }
 
 // ── Resources (tree) ──────────────────────────────────────────────────────────
@@ -427,8 +433,8 @@ export class CdxRepository {
     afterTimestamp: number,
     limit: number,
   ): VersionPageRow[] {
-    return this.db
-      .prepare<[string, number, number], VersionPageRow>(
+    const rows = this.db
+      .prepare<[string, number, number], VersionPageRowRaw>(
         `SELECT rv.timestamp,
                 res.url,
                 rv.successful_request_id,
@@ -439,6 +445,7 @@ export class CdxRepository {
                   ELSE 'pending'
                 END AS status,
                 le.error_code,
+                le.error_name,
                 le.error_message,
                 sr.location_original,
                 sr.location_timestamp
@@ -449,6 +456,7 @@ export class CdxRepository {
            SELECT r.resource_version_url,
                   r.resource_version_timestamp,
                   re.error_code,
+                  re.error_name,
                   re.error_message,
                   ROW_NUMBER() OVER (
                     PARTITION BY r.resource_version_url, r.resource_version_timestamp
@@ -465,6 +473,7 @@ export class CdxRepository {
          LIMIT ?`,
       )
       .all(normalizedUrl, afterTimestamp, limit);
+    return rows.map(fromFlatToVersionPageRow);
   }
 
   // ── Resource version source ───────────────────────────────────────────────────
@@ -747,6 +756,29 @@ export interface HtmlCandidateRow {
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────
+
+function buildPlainError(
+  error_name: string | null,
+  error_code: string,
+  error_message: string | null,
+): PlainError | undefined {
+  if (error_name === null) return undefined;
+  return {
+    name: error_name,
+    ...(error_code !== '' && { code: error_code }),
+    message: error_message ?? '',
+  };
+}
+
+function fromFlatToVersionPageRow({
+  error_name,
+  error_code,
+  error_message,
+  ...rest
+}: VersionPageRowRaw): VersionPageRow {
+  const error = buildPlainError(error_name, error_code, error_message);
+  return { ...rest, ...(error && { error }) };
+}
 
 export function buildDomainExistsClause(domainIds: string[]): string {
   if (domainIds.length === 0) return '';

@@ -37,8 +37,7 @@ export interface Version {
   timestamp: number;
   successful_request_id: string | null;
   status: 'pending' | 'error' | 'ok' | 'redirect';
-  error_code: string | null;
-  error_message: string | null;
+  error?: { name: string; code?: string; message: string };
   location_original: string | null;
   location_timestamp: number | null;
 }

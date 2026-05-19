@@ -16,26 +16,7 @@ import { saveRequestToDisk } from './storage';
 import { insertRequestTx } from './db';
 import { RunRepository } from '../run/repository';
 import { resolveContentType, type ContentType } from '../http/content_type';
-
-interface RequestError {
-  name?: string;
-  code: string;
-  message: string;
-}
-
-function parseError(err: unknown): RequestError {
-  if (err instanceof Error) {
-    return {
-      name: err.name,
-      code: (err as { code?: string }).code ?? 'general',
-      message: err.message,
-    };
-  }
-  return {
-    code: 'general',
-    message: `Invalid error object: ${JSON.stringify(err)}`,
-  };
-}
+import { asPlainError } from '../lib/errors';
 
 export interface DownloadTask {
   runId: string;
@@ -229,7 +210,7 @@ export async function downloadEntry(
       redirectMetadata: hop?.redirectMetadata,
       bodyParser: hop?.bodyParser,
       contentType: hop?.contentType,
-      errors: errors.map(parseError),
+      errors: errors.map(asPlainError),
       remoteLiveReplayUrl: replayServer.buildLiveReplayUrl(
         currentTimestamp,
         currentOriginal,

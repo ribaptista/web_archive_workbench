@@ -26,11 +26,13 @@ function DomainErrorRow({ entry }: { entry: ErrorEntry }) {
               </td>
             </>
           ) : null}
-          <td className="px-3 py-2 whitespace-nowrap">
-            <code className="text-xs text-destructive">{e.error_code}</code>
-          </td>
           <td className="px-3 py-2 whitespace-nowrap text-xs">
             {e.error_name || <span className="text-muted-foreground">—</span>}
+          </td>
+          <td className="px-3 py-2 whitespace-nowrap">
+            <code className="text-xs text-destructive">
+              {e.error_code || '(no code)'}
+            </code>
           </td>
           <td
             className="px-3 py-2 text-xs text-muted-foreground max-w-sm truncate"
@@ -58,10 +60,10 @@ export function DomainErrorList({ entries }: { entries: ErrorEntry[] }) {
               Timestamp
             </th>
             <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">
-              Error Code
+              Error Name
             </th>
             <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">
-              Error Name
+              Error Code
             </th>
             <th className="text-left px-3 py-2 font-semibold">Message</th>
           </tr>

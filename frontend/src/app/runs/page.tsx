@@ -44,9 +44,7 @@ export default function RunsPage() {
                 subcategories: run.errors_by_type
                   .filter((e) => e.domain === d.domain)
                   .map((e) => ({
-                    name: e.error_name
-                      ? `${e.error_name} ${e.error_code}`
-                      : e.error_code,
+                    name: `${e.error_name} ${e.error_code || '(no code)'}`,
                     count: e.count,
                   })),
               }));

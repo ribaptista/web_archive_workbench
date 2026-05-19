@@ -11,8 +11,6 @@ export const DEFAULT_CDX_STRATEGY: SupportedSyncStrategy = 'json_wayback';
 export const DEFAULT_REPLAY_BASE_URL = 'https://web.archive.org/web/';
 
 import type { ParsedCdxEntry } from './sync_strategy/cdx-parse-utils';
-export type { ParsedCdxEntry } from './sync_strategy/cdx-parse-utils';
-export { parseCdxRows } from './sync_strategy/cdx-strategy-wayback';
 
 async function fetchTextWithRetries(
   url: string,
@@ -27,8 +25,9 @@ async function fetchTextWithRetries(
       }
       return response.body.toString('utf8');
     } catch (err) {
-      log(`CDX fetch attempt ${attempt} failed: ${err}`);
-      log(`Retrying in 10 seconds...`);
+      log(
+        `CDX fetch attempt ${attempt} failed: ${err}; retrying in 10 seconds...`,
+      );
       await new Promise((resolve) => setTimeout(resolve, 10_000));
     }
   }

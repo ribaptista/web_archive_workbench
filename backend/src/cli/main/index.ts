@@ -299,7 +299,7 @@ async function syncDomains(
   const summary: SyncDomainResult[] = [];
 
   for (const domain of domains) {
-    log(`\nDomain: ${domain}`);
+    log(`[syncing domain] ${domain}`);
     try {
       const result = await syncDomain(
         db,
@@ -385,8 +385,12 @@ async function runDryRun(
   cdxPageSize: number,
   fetchPendingOptions: FetchPendingOptions,
   runId: string,
-  pool: AgentPool,
+  downloadOptions: DownloadOptions,
 ): Promise<void> {
+  const pool = new AgentPool({
+    proxyFile: downloadOptions.proxyFile,
+    limiterOptions: downloadOptions.limiterOptions,
+  });
   if (!skipCdxSync) {
     await runSyncMode(
       db,
@@ -500,7 +504,6 @@ async function runLiveRun(
   cdxServer: CdxServer,
   cdxQueryRange: CdxQueryFilter,
   runId: string,
-  pool: AgentPool,
 ): Promise<void> {
   const limit = pLimit(downloadOptions.concurrency);
 
@@ -514,8 +517,18 @@ async function runLiveRun(
     return;
   }
 
-  const tracker = new ProgressTracker(pendingTaskCounts.total);
+  // The pool's log goes through the progress bar, so create both together.
+  // The log wrapper closes over `tracker` so the pool can be constructed first.
+  let trackerLog: (msg: string) => void = () => {};
+  const pool = new AgentPool({
+    proxyFile: downloadOptions.proxyFile,
+    limiterOptions: downloadOptions.limiterOptions,
+    log: (msg) => trackerLog(msg),
+  });
+
+  const tracker = new ProgressTracker(pendingTaskCounts.total, pool);
   activeTracker = tracker;
+  trackerLog = (msg) => tracker.log(msg);
   tracker.startProgressBar();
 
   const isSyncDone = handleCdxSync(
@@ -583,11 +596,6 @@ async function main() {
     return;
   }
 
-  const pool = new AgentPool({
-    proxyFile: args.downloadOptions.proxyFile,
-    limiterOptions: args.downloadOptions.limiterOptions,
-  });
-
   if (args.dryRun) {
     await runDryRun(
       db,
@@ -601,7 +609,7 @@ async function main() {
       args.cdxPageSize,
       args.fetchPendingOptions,
       runId,
-      pool,
+      args.downloadOptions,
     );
     return;
   }
@@ -619,7 +627,6 @@ async function main() {
     args.cdxServer,
     args.cdxQueryFilter,
     runId,
-    pool,
   );
 }
 

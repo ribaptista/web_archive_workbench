@@ -11,6 +11,7 @@ import { BodyParser } from '../http/body_parser';
 import type { IncomingHttpHeaders } from '../http/types';
 import { AgentPoolResponse, RequestMetadata } from '../http/agent_pool';
 import { type ContentType } from '../http/content_type';
+import { type PlainError } from '../lib/errors';
 
 export interface InsertRequestTxParams {
   db: DB;
@@ -27,7 +28,7 @@ export interface InsertRequestTxParams {
   redirectMetadata: RedirectResolution | undefined;
   bodyParser: BodyParser | undefined;
   contentType: ContentType | undefined;
-  errors: { name?: string; code: string; message: string }[];
+  errors: PlainError[];
   remoteLiveReplayUrl: string;
 }
 
@@ -53,11 +54,15 @@ function insertErrors(
   requestId: string,
   runId: string,
   domainName: string,
-  errors: { name?: string; code: string; message: string }[],
+  errors: PlainError[],
 ): void {
-  for (const { name = '', code, message } of errors) {
-    reqRepo.insertError(requestId, name, code, message);
-    runRepo.upsertErrorTypeStats(runId, domainName, name, code);
+  for (const { name, message, code } of errors) {
+    // error_code must be non-null: it is part of the primary key in the
+    // run_error_type_stats table (unique index on run_id, domain_name,
+    // error_name, error_code).
+    const safeCode = code ?? '';
+    reqRepo.insertError(requestId, name, safeCode, message);
+    runRepo.upsertErrorTypeStats(runId, domainName, name, safeCode);
   }
 }
 

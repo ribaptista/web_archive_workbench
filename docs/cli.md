@@ -150,8 +150,34 @@ The URL's domain must equal or be a subdomain of `--domain`.
 
 ## Output
 
-While running, you'll see a progress bar with three counters: succeeded /
-failed / pending. On completion (or `Ctrl+C`) you get a final summary like:
+While running, you'll see two progress bars:
+
+```
+[downloads] |████░░░░| 412/1024 | succeeded: 400 | failed: 12 | cdx scanned: 2048 | new: 1024 | ETA: 3m
+[agents]    |██░░░░░░| 12/50 idle | inflight: 35 | recovering: 3
+```
+
+**Downloads bar** — one tick per finished snapshot download:
+
+| Field         | Meaning                                                                              |
+| ------------- | ------------------------------------------------------------------------------------ |
+| `value/total` | Finished downloads vs total queued. `total` grows as CDX sync discovers new entries. |
+| `succeeded`   | Downloads that completed and were stored.                                            |
+| `failed`      | Downloads that errored out (recorded with their error code, available for retry).    |
+| `cdx scanned` | CDX rows examined so far across all domains.                                         |
+| `new`         | CDX rows that were new to the database (i.e. queued for download).                   |
+| `ETA`         | Estimated time to drain the queue at current throughput.                             |
+
+**Agents bar** — live state of the proxy pool (or the single default
+interface if no `--proxy-file`). Each agent is one proxy:
+
+| Field         | Meaning                                                                             |
+| ------------- | ----------------------------------------------------------------------------------- |
+| `value/total` | Idle agents (available to take work) vs total agents in the pool.                   |
+| `inflight`    | Agents currently executing a request.                                               |
+| `recovering`  | Agents temporarily benched after a network error, in exponential backoff (1m → 4m). |
+
+On completion (or `Ctrl+C`) you get a final summary like:
 
 ```
 Complete. succeeded: 1024, failed: 12
