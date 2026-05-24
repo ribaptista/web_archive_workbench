@@ -15,8 +15,8 @@ export interface AgentPoolOptions {
   log?: (message: string) => void;
 }
 
-const BACKOFF_BASE_MS = 60_000;
-const BACKOFF_MAX_MS = 240_000;
+const BACKOFF_BASE_MS = 30_000;
+const BACKOFF_MAX_MS = 60_000;
 const BACKOFF_MULTIPLIER = 2;
 
 export { NetworkFetchError, type RequestMetadata } from './agents';

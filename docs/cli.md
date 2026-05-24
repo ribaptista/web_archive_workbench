@@ -34,16 +34,16 @@ npm start -- \
 
 ## Common arguments
 
-| Argument                   | Default | Description                                                        |
-| -------------------------- | ------- | ------------------------------------------------------------------ |
-| `--concurrency N`          | 5       | Max simultaneous downloads.                                        |
-| `--proxy-file FILE`        | none    | One proxy per line. See [proxies](#proxies).                       |
-| `--cdx-page-size N`        | 128     | CDX result page size.                                              |
-| `--skip-cdx-sync`          | false   | Skip the CDX fetch step and only retry pending/failed entries.     |
-| `--dry-run`                | false   | Show what would be done without downloading.                       |
-| `--verbose`, `-v`          | false   | With `--dry-run`, list individual entries.                         |
-| `--skip-error CODE`        | —       | Treat the given error code as success (repeatable).                |
-| `--skip-error-message STR` | —       | Treat any error containing this substring as success (repeatable). |
+| Argument                 | Default | Description                                                    |
+| ------------------------ | ------- | -------------------------------------------------------------- |
+| `--concurrency N`        | 5       | Max simultaneous downloads globally (not per proxy).           |
+| `--proxy-file FILE`      | none    | One proxy per line. See [proxies](#proxies).                   |
+| `--cdx-page-size N`      | 128     | CDX result page size.                                          |
+| `--skip-cdx-sync`        | false   | Skip the CDX fetch step and only retry pending/failed entries. |
+| `--dry-run`              | false   | Show what would be done without downloading.                   |
+| `--verbose`, `-v`        | false   | With `--dry-run`, list individual entries.                     |
+| `--skip-error-code CODE` | —       | Treat the given error code as success (repeatable).            |
+| `--skip-error-name NAME` | —       | Treat any error with this error name as success (repeatable).  |
 
 ## CDX source arguments
 
@@ -90,7 +90,7 @@ Useful when an archive consistently 451s some URLs and you'd rather move on:
 ```bash
 npm start -- -b ~/wab-data --domain example.com \
   --max-req-per-second 1 \
-  --skip-error 451
+  --skip-error-code 451
 ```
 
 ### Process every domain in the database
@@ -118,11 +118,21 @@ user:pass@host:port
 ```
 
 Rate limits are applied **per proxy**, so 50 proxies × `--max-req-per-second 1`
-= 50 req/s globally. Without a proxy file, all traffic uses the default
-network interface.
+= 50 req/s globally. `--concurrency` is a separate **global** cap across all
+proxies and domains (it is not per proxy). Without a proxy file, all traffic
+uses the default network interface.
 
 An example with sample credentials lives at `backend/proxy.txt` — replace
 with your own.
+
+> **Note on scale:** even with generous kernel/system limits (file
+> descriptors, ephemeral ports, etc.), pointing too many proxies at once
+> can overwhelm parts of your local network infrastructure — most often
+> the modem/router, which may have low limits on concurrent NAT sessions
+> or DNS lookups. As a tested baseline, 50 proxies with
+> `--max-req-per-second 1` and `--concurrency 25` ran reliably. Scale up
+> gradually and watch for connection resets, DNS failures, or modem
+> lockups before raising any of these knobs.
 
 ## What runs and what doesn't survive `Ctrl+C`
 

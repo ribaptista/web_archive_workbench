@@ -41,6 +41,15 @@ You're being rate-limited by the archive. Drop `--max-req-per-second` /
 add proxies via `--proxy-file`. Then `--skip-cdx-sync` to retry only the
 failed entries.
 
+This can also happen when many consecutive requests look like enumeration
+(for example many timestamp variants of the same path, or URL series like
+`/news?id=...`). Some upstream firewalls treat that as abusive and may
+temporarily block source IPs. In that case, reduce both request pressure
+dimensions:
+
+- lower the per-proxy rate (`--max-req-per-second` or `--max-req-per-minute`),
+- and lower global concurrency (`--concurrency`).
+
 ### Progress bar reaches 0 pending but new entries keep appearing
 
 The CLI is still streaming CDX pages in the background and discovering new

@@ -12,18 +12,19 @@ export const DEFAULT_REPLAY_BASE_URL = 'https://web.archive.org/web/';
 
 import type { ParsedCdxEntry } from './sync_strategy/cdx-parse-utils';
 
-async function fetchTextWithRetries(
+async function fetchAndParseWithRetries<R>(
   url: string,
+  parse: (text: string) => R,
   pool: AgentPool,
   log: (msg: string) => void = console.log,
-): Promise<string> {
+): Promise<R> {
   for (let attempt = 1; ; attempt++) {
     try {
       const response = await pool.fetch(url);
       if (response.statusCode !== 200) {
         throw new Error(`CDX fetch failed with status ${response.statusCode}`);
       }
-      return response.body.toString('utf8');
+      return parse(response.body.toString('utf8'));
     } catch (err) {
       log(
         `CDX fetch attempt ${attempt} failed: ${err}; retrying in 10 seconds...`,
@@ -181,8 +182,12 @@ export async function* fetchCdxRows(
 
   while (true) {
     const url = strategy.generateURL(cursor);
-    const text = await fetchTextWithRetries(url, pool, log);
-    const result = strategy.parseResult(text);
+    const result = await fetchAndParseWithRetries(
+      url,
+      (text) => strategy.parseResult(text),
+      pool,
+      log,
+    );
     const entries = strategy.parseEntries(result);
     yield entries.map((entry): EvaluatedCdxEntry => {
       const isValid =

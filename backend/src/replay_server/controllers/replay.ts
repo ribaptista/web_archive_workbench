@@ -56,7 +56,18 @@ export function registerReplayRoutes(
   fastify.get<{ Params: { ts: string; '*': string } }>(
     '/:ts/*',
     async (request, reply) => {
-      const { ts: reqTimestamp, '*': original } = request.params;
+      const { ts: reqTimestamp } = request.params;
+      const tsIndex = request.url.indexOf(reqTimestamp);
+      const prefix = request.url.substring(
+        0,
+        tsIndex + reqTimestamp.length + 1,
+      ); // prefix + ts + /
+      if (!request.url.startsWith(prefix)) {
+        console.error(
+          `[replay] Unexpected prefix in request URL: ${request.url} does not start with ${prefix}`,
+        );
+      }
+      const original = request.url.substring(prefix.length);
 
       const row = lookupCdxRow(cdxRepo, original, Number(reqTimestamp));
 

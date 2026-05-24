@@ -126,7 +126,8 @@ export function parseArgs(): CliArgs {
     })
     .option('concurrency', {
       type: 'number',
-      description: 'Max concurrent requests',
+      description:
+        'Max concurrent downloads globally across the run (not per proxy)',
       default: 5,
     })
     .option('skip-cdx-sync', {
@@ -135,16 +136,15 @@ export function parseArgs(): CliArgs {
       description:
         'Retry non-successful entries for the given domains instead of fetching new CDX',
     })
-    .option('skip-error', {
+    .option('skip-error-code', {
       type: 'array',
       string: true,
       description: 'Error code(s) to treat as success when downloading',
     })
-    .option('skip-error-message', {
+    .option('skip-error-name', {
       type: 'array',
       string: true,
-      description:
-        'Error message substring(s) to treat as success when downloading',
+      description: 'Error name(s) to treat as success when downloading',
     })
     .option('cdx-base-url', {
       type: 'string',
@@ -203,9 +203,10 @@ export function parseArgs(): CliArgs {
     .parseSync();
 
   const domain = (argv['domain'] as string[] | undefined) ?? [];
-  const skipErrors = (argv['skip-error'] as string[] | undefined) ?? [];
-  const skipErrorMessages =
-    (argv['skip-error-message'] as string[] | undefined) ?? [];
+  const skipErrorsCodes =
+    (argv['skip-error-code'] as string[] | undefined) ?? [];
+  const skipErrorNames =
+    (argv['skip-error-name'] as string[] | undefined) ?? [];
 
   const periodMs =
     argv['max-req-per-minute'] !== undefined
@@ -239,8 +240,8 @@ export function parseArgs(): CliArgs {
       to: argv['cdx-to'] as string | undefined,
     },
     fetchPendingOptions: {
-      skipErrors,
-      skipErrorMessages,
+      skipErrorsCodes,
+      skipErrorNames,
     },
     downloadOptions: {
       dataFolder,

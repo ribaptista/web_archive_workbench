@@ -109,8 +109,8 @@ export type PendingTaskCounts = {
 };
 
 export type FetchPendingOptions = {
-  skipErrors?: string[];
-  skipErrorMessages?: string[];
+  skipErrorsCodes?: string[];
+  skipErrorNames?: string[];
 };
 
 export interface PendingEntryRow {
@@ -557,14 +557,15 @@ export class CdxRepository {
     fetchPendingOptions?: FetchPendingOptions;
   }): PendingCountRow[] {
     const { domainIds, fetchPendingOptions = {} } = params;
-    const { skipErrors = [], skipErrorMessages = [] } = fetchPendingOptions;
+    const { skipErrorsCodes: skipErrors = [], skipErrorNames = [] } =
+      fetchPendingOptions;
     if (domainIds.length === 0) return [];
     const domainPlaceholders = domainIds.map(() => '?').join(', ');
     const skipErrorExistsClause = buildSkipErrorClause(
       skipErrors,
-      skipErrorMessages,
+      skipErrorNames,
     );
-    const skipParams = [...skipErrors, ...skipErrorMessages];
+    const skipParams = [...skipErrors, ...skipErrorNames];
     return this.db
       .prepare<unknown[], PendingCountRow>(
         `SELECT rvs.domain_name, COUNT(*) AS n
@@ -585,7 +586,8 @@ export class CdxRepository {
     if (domains.length === 0) {
       return { total: 0, byDomainId: new Map<string, number>() };
     }
-    const { skipErrors = [], skipErrorMessages = [] } = fetchPendingOptions;
+    const { skipErrorsCodes: skipErrors = [], skipErrorNames = [] } =
+      fetchPendingOptions;
     const rows = this.countPendingByDomains({
       domainIds: domains,
       fetchPendingOptions,
@@ -606,12 +608,13 @@ export class CdxRepository {
     limit: number;
   }): PendingEntryRow[] {
     const { domainId, fetchPendingOptions = {}, limit } = params;
-    const { skipErrors = [], skipErrorMessages = [] } = fetchPendingOptions;
+    const { skipErrorsCodes: skipErrors = [], skipErrorNames = [] } =
+      fetchPendingOptions;
     const skipErrorExistsClause = buildSkipErrorClause(
       skipErrors,
-      skipErrorMessages,
+      skipErrorNames,
     );
-    const skipParams = [...skipErrors, ...skipErrorMessages];
+    const skipParams = [...skipErrors, ...skipErrorNames];
     return this.db
       .prepare<unknown[], PendingEntryRow>(
         `SELECT rvs.url, rvs.timestamp, rvs.domain_name
@@ -632,13 +635,14 @@ export class CdxRepository {
     limit: number;
   }): RetryEntryRow[] {
     const { domainIds, runId, fetchPendingOptions = {}, limit } = params;
-    const { skipErrors = [], skipErrorMessages = [] } = fetchPendingOptions;
+    const { skipErrorsCodes: skipErrors = [], skipErrorNames = [] } =
+      fetchPendingOptions;
     const domainPlaceholders = domainIds.map(() => '?').join(', ');
     const skipErrorExistsClause = buildSkipErrorClause(
       skipErrors,
-      skipErrorMessages,
+      skipErrorNames,
     );
-    const skipParams = [...skipErrors, ...skipErrorMessages];
+    const skipParams = [...skipErrors, ...skipErrorNames];
     return this.db
       .prepare<unknown[], RetryEntryRow>(
         `SELECT rvs.domain_name, rvs.url, rvs.timestamp, d.normalized_name
@@ -794,11 +798,11 @@ export function buildDomainExistsClause(domainIds: string[]): string {
 
 export function buildSkipErrorClause(
   skipErrors: string[],
-  skipErrorMessages: string[],
+  skipErrorNames: string[],
 ): string {
   const filters = [
     ...skipErrors.map(() => `re.error_code = ?`),
-    ...skipErrorMessages.map(() => `re.error_message LIKE ?`),
+    ...skipErrorNames.map(() => `re.error_name = ?`),
   ].join(' OR ');
   if (!filters) return '';
   return `AND NOT EXISTS (

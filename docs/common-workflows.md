@@ -45,7 +45,7 @@ commit them and download, re-run without `--dry-run`.
    - If they're recoverable (timeouts, connection resets), re-run the CLI
      with `--skip-cdx-sync`.
    - If they're permanent (`451`, `404`), suppress them next time with
-     `--skip-error 451`.
+     `--skip-error-code 451`.
 
 ## Triage matches from a search
 
@@ -96,11 +96,11 @@ with:
 npm run admin-server -- -b ~/wab-data -s 4 -w 32 --context-size 96
 ```
 
-| Flag                | Effect                                   |
-| ------------------- | ---------------------------------------- |
-| `-s 4`              | Up to 4 searches in parallel.            |
-| `-w 32`             | 32 file-scan workers per search.         |
-| `--context-size 96` | Larger context window around each match. |
+| Flag                | Effect                                                     |
+| ------------------- | ---------------------------------------------------------- |
+| `-s 4`              | Up to 4 searches in parallel.                              |
+| `-w 32`             | 32 file-scan workers per search.                           |
+| `--context-size 96` | Wider window for evaluating `not_regex_nearby` exclusions. |
 
 ## Migrate the data folder
 

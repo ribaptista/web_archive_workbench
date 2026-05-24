@@ -25,7 +25,8 @@ What this does:
 
 1. Fetches the CDX index for `example.com` from `web.archive.org`.
 2. Registers every snapshot in your local database.
-3. Downloads each snapshot's body, respecting the rate limit and concurrency.
+3. Downloads each snapshot's body, respecting the per-proxy rate limit and
+   the global concurrency cap.
 
 You can stop at any time with `Ctrl+C`. The next run will resume.
 

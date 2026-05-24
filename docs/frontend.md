@@ -123,7 +123,7 @@ Every failed download for a domain, with filters.
     loaded from `/api/domains/error_filters`.
   - Scroll for more — infinite-scroll cursor pagination.
 - **Outcome**: pick a class of errors, decide whether to re-run with
-  `--skip-error` or with different proxy/network settings.
+  `--skip-error-code` or with different proxy/network settings.
 
 ## Resources
 

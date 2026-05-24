@@ -43,7 +43,8 @@ once.
 ### Can it download in parallel across domains?
 
 Yes — pass multiple `--domain` flags or use `--all`. Concurrency
-(`--concurrency`) is global across all targeted domains.
+(`--concurrency`) is global across all targeted domains and proxies
+(not per proxy).
 
 ### Does it follow redirects?
 

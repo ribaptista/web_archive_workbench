@@ -20,12 +20,12 @@ The server binds to `localhost:5050` by default (see
 
 ## Options
 
-| Argument                              | Default | Description                                                            |
-| ------------------------------------- | ------- | ---------------------------------------------------------------------- |
-| `--data-folder`, `-b`                 | —       | **Required.** Same folder used by the CLI.                             |
-| `--max-concurrent-searches`, `-s`     | 2       | How many searches may run in parallel. Each search owns a worker pool. |
-| `--max-file-workers-per-search`, `-w` | 16      | Number of worker threads scanning files per running search.            |
-| `--context-size`                      | 64      | Characters of context shown around each regex match.                   |
+| Argument                              | Default | Description                                                                                                                                                                                                       |
+| ------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--data-folder`, `-b`                 | —       | **Required.** Same folder used by the CLI.                                                                                                                                                                        |
+| `--max-concurrent-searches`, `-s`     | 2       | How many searches may run in parallel. Each search owns a worker pool.                                                                                                                                            |
+| `--max-file-workers-per-search`, `-w` | 16      | Number of worker threads scanning files per running search.                                                                                                                                                       |
+| `--context-size`                      | 64      | Half-window (in characters) around each main-regex hit where the optional `not_regex_nearby` is tested. Has no effect on conditions without `not_regex_nearby`, and does not affect the snippet shown in results. |
 
 Tune these based on your machine. A search with N file workers will use up
 to N CPU cores; combined `s × w` is the worst-case worker count.
