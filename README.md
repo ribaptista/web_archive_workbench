@@ -101,6 +101,7 @@ For a more detailed walkthrough, see [docs/quick-start.md](docs/quick-start.md).
   - [Troubleshooting](docs/troubleshooting.md) — symptoms → fixes
   - [FAQ](docs/faq.md)
 - [Screenshots](docs/screenshots.md)
+- [TODO](TODO.md) — known issues and planned features
 
 ## Core concepts
 
